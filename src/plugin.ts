@@ -10,15 +10,13 @@
  * file — the body limit on a plugin route is 100kb, which is a thumbnail, not an attachment. That is
  * issue #118 on the kernel, and the screen says so instead of offering a button that fails.
  */
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import {
   definePlugin,
   eventsEmitScope,
   type PluginContext,
   type ServedCall,
 } from "@creativepetabyte/argus-sdk";
+import { integrityOf, PAGE_COMPONENT, UI_URL } from "./bundle.js";
 import { openStore, type Message, type Store } from "./store.js";
 
 export const PLUGIN_ID = "chat.internal";
@@ -44,28 +42,14 @@ export const CHAT = "chat.internal.v1.InternalChat";
 export const MESSAGE_SENT = "chat.internal.v1.MessageSent";
 
 const SCREEN_PATH = "chat-interno";
-const BUNDLE = fileURLToPath(new URL("../ui/dist/ui.js", import.meta.url));
-const BUNDLE_URL = process.env.PLUGIN_UI_URL ?? "http://localhost:4640/ui.js";
 
 /**
- * The hash of the file THIS process has on disk, or nothing when it was never built.
+ * What is at the screen's address, hashed.
  *
- * The kernel refuses the screen when what the browser downloaded does not match, which is why the
- * process and the bundle server have to read the same bytes — built together, never at two moments.
- *
- * `undefined` when there is no bundle, and then the manifest declares neither the page nor the
- * component: a named component with no bundle behind it is a blank region on somebody's screen. The
- * link stays, degraded, so the plugin is visibly installed rather than invisible.
+ * Resolved once, at startup, before anything is announced -- see `bundle.ts` for why it asks the
+ * address rather than the disk.
  */
-function integrity(): string | undefined {
-  try {
-    return `sha384-${createHash("sha384").update(readFileSync(BUNDLE)).digest("base64")}`;
-  } catch {
-    return undefined;
-  }
-}
-
-const HASH = integrity();
+const HASH = await integrityOf((line) => console.log(`[${PLUGIN_ID}] ${line}`));
 
 /** An answer a screen can translate. The API returns codes, never sentences. */
 type Refusal = { error: string };
@@ -123,11 +107,11 @@ const plugin = definePlugin({
         essential: true,
       },
     ],
-    ...(HASH === undefined ? {} : { ui: { url: BUNDLE_URL, integrity: HASH } }),
+    ...(HASH === undefined ? {} : { ui: { url: UI_URL, integrity: HASH } }),
     pages:
       HASH === undefined
         ? []
-        : [{ path: SCREEN_PATH, title: "Chat interno", component: "ChatInternoPage" }],
+        : [{ path: SCREEN_PATH, title: "Chat interno", component: PAGE_COMPONENT }],
     slots: [
       {
         id: `${PLUGIN_ID}:rail`,
