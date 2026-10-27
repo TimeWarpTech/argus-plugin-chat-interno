@@ -1,0 +1,15 @@
+node_modules/
+
+# O que uma execucao produz: a credencial que o plugin recebeu ao se inscrever e o storage dele.
+data/
+credentials.json
+credentials.json.*
+.run-token/
+
+*.log
+.env
+.env.*
+
+# O bundle da tela e um artefato de build: `npm run build:ui` o refaz, e o processo
+# calcula o `integrity` lendo o arquivo que ele mesmo acabou de ler.
+ui/dist/

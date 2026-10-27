@@ -1,0 +1,698 @@
+/*
+ * The internal chat's screen.
+ *
+ * Everything lives inside a shadow root, so these names neither leak nor collide with the product's.
+ * The layout is the one everybody already knows from a messaging app — a list beside a thread, the
+ * thread scrolling under a fixed header and above a fixed composer — because the screen's job is to
+ * be used without being learned.
+ *
+ * It fills the height it is given rather than sitting in a short box: a conversation you can only
+ * see four lines of is the thing that makes a chat feel cramped.
+ */
+.ci {
+  /*
+   * One brand colour, and everything else derived from the PRODUCT's own theme tokens.
+   *
+   * Those tokens are custom properties on `<html>`, and custom properties inherit through a shadow
+   * root — so mixing against `--color-panel` follows the product's own light/dark switch for free.
+   * Reading `prefers-color-scheme` instead was wrong and visibly so: the product went dark and this
+   * screen stayed a white island inside it, because the switch is a class on `<html>`, not the OS.
+   */
+  --brand: #25d366;
+
+  /*
+   * Only three of the product's tokens are read, and everything else is mixed from them.
+   *
+   * Tailwind v4 emits a theme variable only when some utility uses it, so `--color-thread` and
+   * `--color-surface` are simply absent at runtime — asking for them got the fallback, which is how
+   * the thread stayed light while the rail went dark. These three back `bg-panel`, `text-*` and
+   * `border-line`, so they are always there.
+   */
+  --bar: var(--color-panel, #fff);
+  --ink: var(--color-text, #20232b);
+  --line: var(--color-line, #e4e6ec);
+
+  --rail: var(--bar);
+  --canvas: color-mix(in srgb, var(--ink) 5%, var(--bar));
+  --paper: color-mix(in srgb, var(--ink) 9%, var(--bar));
+  --faint: color-mix(in srgb, var(--ink) 55%, var(--bar));
+
+  /* The two bubbles. Mixed against the panel, so each one darkens with the product. */
+  --mine: color-mix(in srgb, var(--brand) 22%, var(--bar));
+  --theirs: var(--paper);
+  --accent: color-mix(in srgb, var(--brand) 72%, var(--ink));
+  --unread: var(--brand);
+  --unread-ink: color-mix(in srgb, var(--brand) 12%, #06281a);
+  --shadow: 0 1px 0.5px color-mix(in srgb, var(--ink) 14%, transparent);
+
+  display: flex;
+  height: 100%;
+  min-height: 32rem;
+  margin: -1.5rem;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+/* The list of conversations. */
+.ci-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: clamp(17rem, 30%, 26rem);
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--rail);
+}
+
+.ci-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bar);
+}
+
+.ci-search-field {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.875rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--paper);
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.ci-search-field::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+.ci-total {
+  flex: none;
+  min-width: 1.375rem;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 999px;
+  background: var(--unread);
+  color: var(--unread-ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.ci-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ci-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ci-entry:hover {
+  background: color-mix(in srgb, currentcolor 5%, transparent);
+}
+
+.ci-entry.is-open {
+  background: color-mix(in srgb, currentcolor 9%, transparent);
+}
+
+.ci-entry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ci-entry-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.ci-entry-top,
+.ci-entry-bottom {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.ci-entry-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ci-entry-top time,
+.ci-entry-last {
+  flex: none;
+  color: var(--faint);
+  font-size: 0.75rem;
+}
+
+.ci-entry-last {
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ci-entry-mine {
+  color: var(--faint);
+}
+
+.ci-count {
+  flex: none;
+  min-width: 1.25rem;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 999px;
+  background: var(--unread);
+  color: var(--unread-ink);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* A colleague you have not written to yet: same row, quieter, no history to show. */
+.ci-entry.is-new .ci-entry-name {
+  font-weight: 400;
+}
+
+.ci-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: hsl(var(--person, 200) 42% 46%);
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.ci-avatar-sm {
+  width: 2.625rem;
+  height: 2.625rem;
+  font-size: 0.875rem;
+}
+
+.ci-avatar-md {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 0.8125rem;
+}
+
+.ci-quiet {
+  margin: 0;
+  padding: 1.25rem 1rem;
+  color: var(--faint);
+  font-size: 0.875rem;
+}
+
+.ci-foot {
+  flex: none;
+  padding: 0.75rem;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ci-new-group {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--line);
+  background: var(--bar);
+}
+
+.ci-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.ci-chip {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.ci-chip.is-picked {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ci-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* The open conversation. */
+.ci-thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+.ci-who {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bar);
+}
+
+.ci-who-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ci-who-name {
+  font-weight: 500;
+}
+
+.ci-who-meta {
+  color: var(--faint);
+  font-size: 0.75rem;
+}
+
+.ci-nothing {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  margin: 0;
+  color: var(--faint);
+}
+
+.ci-problem {
+  flex: none;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  background: color-mix(in srgb, var(--color-warning, #a16207) 22%, var(--bar));
+  color: var(--ink);
+  font-size: 0.8125rem;
+}
+
+.ci-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  padding: 1rem 5%;
+  overflow-y: auto;
+  /*
+   * The faint lattice behind a conversation. Drawn rather than fetched: an image would be another
+   * origin for the operator to approve, for a texture nobody looks at directly.
+   */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--ink) 2.5%, transparent) 0 1px,
+      transparent 1px 14px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--ink) 2.5%, transparent) 0 1px,
+      transparent 1px 14px
+    );
+}
+
+.ci-day {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.ci-date {
+  align-self: center;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--bar);
+  box-shadow: var(--shadow);
+  color: var(--faint);
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}
+
+.ci-run {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin-bottom: 0.5rem;
+}
+
+.ci-said {
+  margin: 0 0 0.125rem 0.5rem;
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.ci-bubble {
+  position: relative;
+  align-self: flex-start;
+  max-width: min(100%, 40rem);
+  margin: 0;
+  padding: 0.375rem 0.5rem 0.375rem 0.5625rem;
+  border-radius: 0.5rem;
+  background: var(--theirs);
+  box-shadow: var(--shadow);
+}
+
+.ci-run.is-mine .ci-bubble {
+  align-self: flex-end;
+  background: var(--mine);
+}
+
+/* The tail, on the first bubble of a run only — that is what marks where somebody started talking. */
+.ci-run > .ci-bubble:first-of-type {
+  border-top-left-radius: 0;
+}
+
+.ci-run.is-mine > .ci-bubble:first-of-type {
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0;
+}
+
+.ci-text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* The time sits in the last line's gutter, as it does in a messaging app. */
+.ci-at {
+  float: right;
+  margin: 0.375rem 0 -0.125rem 0.75rem;
+  color: var(--faint);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* The one piece of motion: what has just arrived, lit for a moment. */
+.ci-bubble.is-new {
+  animation: ci-lit 1.4s ease-out;
+}
+
+@keyframes ci-lit {
+  from {
+    background: color-mix(in srgb, var(--unread) 35%, var(--theirs));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ci-bubble.is-new {
+    animation: none;
+    outline: 2px solid var(--unread);
+  }
+}
+
+.ci-compose {
+  display: flex;
+  flex: none;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-top: 1px solid var(--line);
+  background: var(--bar);
+}
+
+.ci-field {
+  flex: 1;
+  min-width: 0;
+  padding: 0.625rem 0.875rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--paper);
+  color: inherit;
+  font: inherit;
+}
+
+.ci-field:focus-visible,
+.ci-search-field:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ci-go {
+  flex: none;
+  padding: 0.5rem 1.125rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ci-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ci-plain {
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ci-note {
+  flex: none;
+  margin: 0;
+  padding: 0 1rem 0.5rem;
+  background: var(--bar);
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+
+/* Files, and where other plugins contribute. */
+
+.ci-composer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  background: var(--bar);
+}
+
+.ci-composer .ci-compose {
+  border-top: 0;
+}
+
+.ci-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 1rem 0;
+  color: var(--faint);
+  font-size: 0.8125rem;
+}
+
+/* The real file input never shows: the paperclip is the control, and it is a real button. */
+.ci-picker {
+  display: none;
+}
+
+.ci-clip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.375rem;
+  height: 2.375rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  font-size: 1.375rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ci-clip:hover:not(:disabled) {
+  background: color-mix(in srgb, currentcolor 10%, transparent);
+  color: var(--accent);
+}
+
+.ci-clip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ci-clip:focus-visible,
+.ci-plain:focus-visible,
+.ci-go:focus-visible,
+.ci-chip:focus-visible,
+.ci-foot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ci-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/*
+ * A picture is shown at its own size, bounded.
+ *
+ * Never stretched to fill: a small image blown up to the width of a bubble looks broken, and the
+ * one thing somebody wants from a photo in a chat is to see what it actually is.
+ */
+.ci-shot {
+  display: block;
+  width: fit-content;
+  max-width: min(100%, 20rem);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.ci-shot img,
+.ci-shot video {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 20rem;
+  object-fit: contain;
+}
+
+.ci-audio {
+  width: min(100%, 17rem);
+  height: 2.25rem;
+}
+
+/* Anything that is not shown inline: named, measured, and fetched only when asked for. */
+.ci-file {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.ci-file-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ci-file-name {
+  overflow: hidden;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ci-file-size,
+.ci-file-failed {
+  color: var(--faint);
+  font-size: 0.75rem;
+}
+
+.ci-file .ci-plain {
+  flex: none;
+  padding: 0.25rem 0.5rem;
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/*
+ * Where another plugin's contribution lands.
+ *
+ * It brings its own shadow root and its own error boundary, so nothing here styles its insides —
+ * this only says how much room it gets and keeps it from pushing the chat around.
+ */
+.ci-slot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 50%;
+}
+
+.ci-rail > .ci-slot {
+  max-width: 100%;
+  padding: 0 0.75rem;
+}
+
+.ci-rail > .ci-slot:empty,
+.ci-who > .ci-slot:empty,
+.ci-compose > .ci-slot:empty {
+  display: none;
+}
+
+/* One pane at a time on a phone: a 17rem rail beside a thread leaves room for neither. */
+@media (max-width: 48rem) {
+  .ci-rail {
+    width: 100%;
+  }
+
+  .ci-thread {
+    display: none;
+  }
+
+  .ci:has(.ci-who) .ci-rail {
+    display: none;
+  }
+
+  .ci:has(.ci-who) .ci-thread {
+    display: flex;
+  }
+}

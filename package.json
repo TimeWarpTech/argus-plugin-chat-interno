@@ -1,0 +1,30 @@
+{
+  "name": "argus-plugin-chat-interno",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "vitest run",
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "serve-ui": "tsx src/serve-ui.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@creativepetabyte/argus-chat-media": "file:../ModuliumChat/packages/chat-media",
+    "@creativepetabyte/argus-sdk": "file:../ModuliumChat/packages/plugin-sdk/dist"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.5",
+    "vitest": "^3.2.4"
+  }
+}
