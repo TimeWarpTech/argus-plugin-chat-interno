@@ -56,17 +56,23 @@ obvious fourth slot, needs the host to pass slot context and is not possible yet
 
 ## Before it builds anywhere
 
-This plugin needs two workspace packages of the kernel that are **not published yet**:
+Two dependencies do not come from npm:
 
-- `@creativepetabyte/argus-sdk` at a version newer than 0.1.2 — it needs the kernel telling a plugin
-  **who made the call**, which landed after that release. The published 0.1.2 types a served method
-  as `(input: unknown) => unknown`, with no caller, so this plugin does not compile against it.
-- `@creativepetabyte/argus-chat-media` — never published.
+- **`@creativepetabyte/argus-chat-media`** comes straight from its repository,
+  [`TimeWarpTech/argus-chat-media`](https://github.com/TimeWarpTech/argus-chat-media). It builds
+  itself on install, so `npm install` is all it takes.
+- **`@creativepetabyte/argus-sdk`** is wired as `file:../ModuliumChat/packages/plugin-sdk/dist`,
+  because this plugin needs the kernel telling it **who made the call**, which landed after the
+  0.1.2 release on npm. That published version types a served method as `(input: unknown) => unknown`
+  — no caller — and this plugin does not compile against it.
 
-Both are wired as `file:../ModuliumChat/...`, so a checkout of the kernel has to sit beside this one,
-and the SDK has to be built once (`bun run build` inside `packages/plugin-sdk`). Until those two are
-on npm, this repository is not installable on its own — that is a fact about the packages, not about
-the plugin.
+So a checkout of the kernel has to sit beside this one, and its SDK has to be built once:
+
+```
+cd ../ModuliumChat/packages/plugin-sdk && bun run build
+```
+
+Once the SDK is released again, that line becomes an ordinary dependency.
 
 ## Running it
 
