@@ -7,8 +7,8 @@ import {
   otherSideOf,
   previewOf,
   refusalIn,
-} from "./model";
-import { wordsFor } from "./words";
+} from "../../ui/src/model";
+import { wordsFor } from "../../ui/src/words";
 
 const words = wordsFor("pt-BR");
 

@@ -7,19 +7,22 @@
     "start": "tsx src/main.ts",
     "test": "vitest run",
     "build:ui": "vite build --config ui/vite.config.ts",
-    "serve-ui": "tsx src/serve-ui.ts"
+    "serve-ui": "tsx src/serve-ui.ts",
+    "db:generate": "drizzle-kit generate"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "@creativepetabyte/argus-chat-media": "github:TimeWarpTech/argus-chat-media",
-    "@creativepetabyte/argus-sdk": "file:../ModuliumChat/packages/plugin-sdk/dist"
+    "@creativepetabyte/argus-sdk": "file:../ModuliumChat/packages/plugin-sdk/dist",
+    "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "drizzle-kit": "^0.31.11",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tsx": "^4.23.15",

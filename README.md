@@ -149,9 +149,30 @@ SDK resends on its own, and the screen catches up on its next call.
 
 ## Storage
 
-Its own SQLite file under `PLUGIN_DATA_DIR`, files included, not `ctx.store`: a chat is listed, paginated and counted,
-and a key-value bucket would mean reading every conversation to draw one screen. With no data directory
-it runs in memory and says so in the log, rather than inventing a path that promises durability.
+Its own SQLite file under `PLUGIN_DATA_DIR`, files included, not `ctx.store`: a chat is listed,
+paginated and counted, and a key-value bucket would mean reading every conversation to draw one
+screen. With no data directory it runs in memory and says so in the log, rather than inventing a
+path that promises durability.
+
+The schema is declared once in `src/schema.ts` with **Drizzle**, and `npm run db:generate` writes
+the migrations into `drizzle/`, which ship with the plugin and are applied when a company's database
+is opened. That matters more here than in a product: **the kernel knows nothing about this file and
+will never migrate it**, so a database written last week has to keep opening after a column is
+added, and the plugin is the only thing that can make that true.
+
+There is no Drizzle driver for `node:sqlite`, and neither of the two that exist fits — `better-sqlite3`
+is a native dependency whoever installs this would have to build, and `bun-sqlite` only runs under
+Bun while this process runs under Node. So it goes through `sqlite-proxy`, which asks only for a
+function that runs SQL. The plugin keeps the runtime's SQLite, gets a typed schema and generated
+migrations, and pays for it with asynchrony: every query is a promise, which is why the whole store
+is `async`, and why writes go through a queue that serialises them per company. SQLite gives the
+transaction; the queue gives the isolation, because an `await` between `BEGIN` and `COMMIT` would
+otherwise let two calls interleave inside one.
+
+A database that already has the tables is **adopted**, not rebuilt. This plugin created its schema
+by hand before it had migrations, and running `CREATE TABLE` against such a file fails with "table
+already exists" — which made every conversation in it unreachable. The first migration is recorded
+as done instead, which is the usual baseline, and `tests/migrations.test.ts` is what keeps it true.
 
 Messages are ordered by a growing `seq`, never by timestamp — two in the same millisecond would be a
 coin toss. A direct conversation is keyed by the sorted pair, so opening it from either side lands in
@@ -160,9 +181,13 @@ the same history.
 ## Tests
 
 ```
-npm test              # 50, with nothing installed: no kernel, no database, no network
-npx tsc -p tsconfig.json
+npm test              # 59, with nothing installed: no kernel, no database, no network
+npx tsc -p tsconfig.json          # the process and its tests
+npx tsc -p ui/tsconfig.json       # the screen and its tests
 ```
+
+They live in `tests/`, apart from the code: `store`, `media`, `migrations`, `plugin`, and `ui/` for
+the screen's pure functions.
 
 The suite includes `runPluginConformance`, which is the gate: idempotence, degradation, undeclared
 events, company isolation, export and deletion. A plugin that fails it is not finished, however green

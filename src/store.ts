@@ -4,12 +4,16 @@
  * Not `ctx.store`, deliberately. A chat is listed, paginated and counted — a key-value bucket would
  * mean reading every conversation to draw one screen, and recomputing unread counts from the whole
  * history on every open. `ctx.store` is for a handful of keys; this is not that.
+ *
+ * Everything here is asynchronous because Drizzle reaches `node:sqlite` through a proxy (see
+ * `db.ts`), and every write goes through `database.write`, which serialises them per company.
  */
 import type { Attachment } from "@creativepetabyte/argus-chat-media";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { and, desc, eq, lt, ne, sql } from "drizzle-orm";
+import { type Database, openDatabase } from "./db.js";
 import { MediaStore } from "./media-store.js";
+import { conversations, messages, participants } from "./schema.js";
 
 export type Kind = "direct" | "group";
 
@@ -30,7 +34,7 @@ export interface Message {
   at: string;
   /** What orders messages. Never the timestamp: two in the same millisecond would be a coin toss. */
   seq: number;
-  /** The files this message carries. Metadata only -- the bytes are fetched piece by piece. */
+  /** The files this message carries. Metadata only — the bytes are fetched piece by piece. */
   attachments: Attachment[];
 }
 
@@ -41,30 +45,30 @@ export interface ConversationView extends Conversation {
 }
 
 export interface Store {
-  openDirect(a: string, b: string): Conversation;
-  openGroup(name: string, createdBy: string, members: readonly string[]): Conversation;
-  conversationsOf(userId: string): ConversationView[];
-  participantsOf(conversationId: string): string[];
+  openDirect(a: string, b: string): Promise<Conversation>;
+  openGroup(name: string, createdBy: string, members: readonly string[]): Promise<Conversation>;
+  conversationsOf(userId: string): Promise<ConversationView[]>;
+  participantsOf(conversationId: string): Promise<string[]>;
   /** Which conversation a message belongs to, which is what decides who may read its files. */
-  conversationOfMessage(messageId: string): string | undefined;
+  conversationOfMessage(messageId: string): Promise<string | undefined>;
   send(input: {
     conversationId: string;
     authorId: string;
     text: string;
     messageId?: string;
     attachmentIds?: readonly string[];
-  }): Message;
-  messagesOf(conversationId: string, options?: { before?: number; limit?: number }): Message[];
-  markRead(conversationId: string, userId: string, through: number): void;
-  unreadFor(userId: string): number;
-  exportAll(): {
+  }): Promise<Message>;
+  messagesOf(conversationId: string, options?: { before?: number; limit?: number }): Promise<Message[]>;
+  markRead(conversationId: string, userId: string, through: number): Promise<void>;
+  unreadFor(userId: string): Promise<number>;
+  exportAll(): Promise<{
     conversations: Conversation[];
     participants: unknown[];
     messages: Message[];
     attachments: unknown[];
     attachmentChunks: unknown[];
-  };
-  deleteAll(): void;
+  }>;
+  deleteAll(): Promise<void>;
   close(): void;
   /** The files, kept beside the messages that own them. */
   readonly media: MediaStore;
@@ -82,263 +86,243 @@ export const MAX_TEXT = 4000;
  */
 const pairKeyOf = (a: string, b: string): string => [a, b].sort().join("\u0000");
 
-/**
- * A row as SQLite hands it over: a loose record of values.
- *
- * Read field by field rather than asserted into a shape. The schema below is the only writer, so a
- * row that does not match means the file was tampered with or migrated by something else — and
- * then `corrupt_row` is the honest answer, not a half-built object flowing on.
- */
-type Row = Record<string, unknown>;
+const conversationOf = (row: typeof conversations.$inferSelect): Conversation => ({
+  id: row.id,
+  kind: row.kind,
+  name: row.name ?? undefined,
+  createdBy: row.createdBy,
+  createdAt: row.createdAt,
+});
 
-const text = (row: Row, key: string): string => {
-  const value = row[key];
-  if (typeof value !== "string") throw new Error("corrupt_row");
-  return value;
-};
-
-const count = (row: Row | undefined, key: string): number => {
-  const value = row?.[key];
-  return typeof value === "number" ? value : 0;
-};
-
-/** A row that must be there: it was just inserted, so its absence is the file lying. */
-const must = (row: Row | undefined): Row => {
-  if (row === undefined) throw new Error("corrupt_row");
-  return row;
-};
-
-const conversationOf = (row: Row): Conversation => {
-  const name = row.name;
-  return {
-    id: text(row, "id"),
-    kind: row.kind === "group" ? "group" : "direct",
-    name: typeof name === "string" ? name : undefined,
-    createdBy: text(row, "created_by"),
-    createdAt: text(row, "created_at"),
-  };
-};
-
-const messageOf = (row: Row, attachments: Attachment[] = []): Message => {
-  const seq = row.seq;
-  if (typeof seq !== "number") throw new Error("corrupt_row");
-  return {
-    id: text(row, "id"),
-    conversationId: text(row, "conversation_id"),
-    authorId: text(row, "author_id"),
-    text: text(row, "text"),
-    at: text(row, "at"),
-    seq,
-    attachments,
-  };
-};
-
-/**
- * Opens this company's store.
- *
- * `undefined` is not an oversight: the runtime hands a folder only when the process was given one,
- * and inventing a path would promise a durability it does not have. With nowhere to write, the chat
- * runs in memory -- usable, and lost on restart. The caller says so out loud.
- */
 export function openStore(folder: string | undefined): Store {
-  const db = new DatabaseSync(folder === undefined ? ":memory:" : join(folder, "chat-interno.db"));
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS conversations (
-      id          TEXT PRIMARY KEY,
-      kind        TEXT NOT NULL,
-      name        TEXT,
-      created_by  TEXT NOT NULL,
-      created_at  TEXT NOT NULL,
-      pair_key    TEXT UNIQUE
-    );
-    CREATE TABLE IF NOT EXISTS participants (
-      conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-      user_id         TEXT NOT NULL,
-      read_through    INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (conversation_id, user_id)
-    );
-    CREATE TABLE IF NOT EXISTS messages (
-      seq             INTEGER PRIMARY KEY AUTOINCREMENT,
-      id              TEXT NOT NULL UNIQUE,
-      conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-      author_id       TEXT NOT NULL,
-      text            TEXT NOT NULL,
-      at              TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS messages_by_conversation ON messages (conversation_id, seq);
-    CREATE INDEX IF NOT EXISTS participants_by_user ON participants (user_id);
-  `);
+  const database = openDatabase(folder);
+  const { db } = database;
+  const media = new MediaStore(database);
 
-  const insertConversation = db.prepare(
-    "INSERT INTO conversations (id, kind, name, created_by, created_at, pair_key) VALUES (?, ?, ?, ?, ?, ?)",
-  );
-  const insertParticipant = db.prepare(
-    "INSERT OR IGNORE INTO participants (conversation_id, user_id) VALUES (?, ?)",
-  );
-  const byPair = db.prepare("SELECT * FROM conversations WHERE pair_key = ?");
-  const byId = db.prepare("SELECT * FROM conversations WHERE id = ?");
-  const participantRows = db.prepare("SELECT user_id FROM participants WHERE conversation_id = ?");
-  const isParticipant = db.prepare(
-    "SELECT 1 AS yes FROM participants WHERE conversation_id = ? AND user_id = ?",
-  );
-  const insertMessage = db.prepare(
-    "INSERT INTO messages (id, conversation_id, author_id, text, at) VALUES (?, ?, ?, ?, ?)",
-  );
-  const messageById = db.prepare("SELECT * FROM messages WHERE id = ?");
-  const lastMessage = db.prepare(
-    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq DESC LIMIT 1",
-  );
-  const unreadInConversation = db.prepare(`
-    SELECT COUNT(*) AS n FROM messages m
-    JOIN participants p ON p.conversation_id = m.conversation_id AND p.user_id = ?
-    WHERE m.conversation_id = ? AND m.seq > p.read_through AND m.author_id <> ?
-  `);
-  const unreadEverywhere = db.prepare(`
-    SELECT COUNT(*) AS n FROM messages m
-    JOIN participants p ON p.conversation_id = m.conversation_id
-    WHERE p.user_id = ? AND m.seq > p.read_through AND m.author_id <> ?
-  `);
-  const mine = db.prepare(`
-    SELECT c.* FROM conversations c
-    JOIN participants p ON p.conversation_id = c.id
-    WHERE p.user_id = ?
-  `);
-  const pageFromTop = db.prepare(
-    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq DESC LIMIT ?",
-  );
-  const pageBefore = db.prepare(
-    "SELECT * FROM messages WHERE conversation_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?",
-  );
-  const readThrough = db.prepare(
-    "UPDATE participants SET read_through = MAX(read_through, ?) WHERE conversation_id = ? AND user_id = ?",
-  );
+  const participantsIn = async (conversationId: string): Promise<string[]> => {
+    const rows = await db
+      .select({ userId: participants.userId })
+      .from(participants)
+      .where(eq(participants.conversationId, conversationId));
+    return rows.map((row) => row.userId);
+  };
 
-  const media = new MediaStore(db);
+  const isParticipant = async (conversationId: string, userId: string): Promise<boolean> => {
+    const [row] = await db
+      .select({ userId: participants.userId })
+      .from(participants)
+      .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, userId)));
+    return row !== undefined;
+  };
 
   /** A message with whatever it carries. */
-  const withFiles = (row: Row): Message => {
-    const message = messageOf(row);
-    return { ...message, attachments: media.attachmentsOf(message.id) };
+  const withFiles = async (row: typeof messages.$inferSelect): Promise<Message> => ({
+    id: row.id,
+    conversationId: row.conversationId,
+    authorId: row.authorId,
+    text: row.text,
+    at: row.at,
+    seq: row.seq,
+    attachments: await media.attachmentsOf(row.id),
+  });
+
+  const byId = async (id: string) => {
+    const [row] = await db.select().from(messages).where(eq(messages.id, id));
+    return row;
   };
 
-  const participantsIn = (conversationId: string): string[] =>
-    participantRows.all(conversationId).map((row) => text(row, "user_id"));
-
-  const unreadOf = (conversationId: string, userId: string): number => {
-    return count(unreadInConversation.get(userId, conversationId, userId), "n");
-  };
-
-  const viewOf = (row: Row, userId: string): ConversationView => {
-    const conversation = conversationOf(row);
-    const last = lastMessage.get(conversation.id);
-    return {
-      ...conversation,
-      participants: participantsIn(conversation.id),
-      lastMessage: last === undefined ? undefined : withFiles(last),
-      unread: unreadOf(conversation.id, userId),
-    };
+  const unreadOf = async (conversationId: string, userId: string): Promise<number> => {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(messages)
+      .innerJoin(
+        participants,
+        and(eq(participants.conversationId, messages.conversationId), eq(participants.userId, userId)),
+      )
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          sql`${messages.seq} > ${participants.readThrough}`,
+          ne(messages.authorId, userId),
+        ),
+      );
+    return row?.n ?? 0;
   };
 
   return {
     openDirect(a, b) {
-      if (a === b) throw new Error("not_two_people");
-      const key = pairKeyOf(a, b);
-      const existing = byPair.get(key);
-      if (existing !== undefined) return conversationOf(existing);
-      const id = randomUUID();
-      insertConversation.run(id, "direct", null, a, new Date().toISOString(), key);
-      insertParticipant.run(id, a);
-      insertParticipant.run(id, b);
-      return conversationOf(must(byId.get(id)));
+      return database.write(async () => {
+        if (a === b) throw new Error("not_two_people");
+        const key = pairKeyOf(a, b);
+        const [existing] = await db.select().from(conversations).where(eq(conversations.pairKey, key));
+        if (existing !== undefined) return conversationOf(existing);
+
+        const row = {
+          id: randomUUID(),
+          kind: "direct" as const,
+          name: null,
+          createdBy: a,
+          createdAt: new Date().toISOString(),
+          pairKey: key,
+        };
+        await db.insert(conversations).values(row);
+        await db.insert(participants).values([
+          { conversationId: row.id, userId: a },
+          { conversationId: row.id, userId: b },
+        ]);
+        return conversationOf(row);
+      });
     },
 
     openGroup(name, createdBy, members) {
-      const trimmed = name.trim();
-      if (trimmed === "") throw new Error("empty_name");
-      const id = randomUUID();
-      // `pair_key` stays NULL: a group is never deduplicated. Two groups may share a name and a
-      // membership and still be two different rooms, because somebody meant to open a second one.
-      insertConversation.run(id, "group", trimmed, createdBy, new Date().toISOString(), null);
-      insertParticipant.run(id, createdBy);
-      for (const member of members) insertParticipant.run(id, member);
-      return conversationOf(must(byId.get(id)));
+      return database.write(async () => {
+        const trimmed = name.trim();
+        if (trimmed === "") throw new Error("empty_name");
+        const row = {
+          id: randomUUID(),
+          kind: "group" as const,
+          name: trimmed,
+          createdBy,
+          createdAt: new Date().toISOString(),
+          // NULL: a group is never deduplicated. Two groups may share a name and a membership and
+          // still be two different rooms, because somebody meant to open a second one.
+          pairKey: null,
+        };
+        await db.insert(conversations).values(row);
+        const everyone = [...new Set([createdBy, ...members])];
+        await db.insert(participants).values(everyone.map((userId) => ({ conversationId: row.id, userId })));
+        return conversationOf(row);
+      });
     },
 
-    conversationsOf(userId) {
-      return (mine.all(userId))
-        .map((row) => viewOf(row, userId))
-        .sort((a, b) => (b.lastMessage?.seq ?? 0) - (a.lastMessage?.seq ?? 0));
+    async conversationsOf(userId) {
+      const rows = await db
+        .select()
+        .from(conversations)
+        .innerJoin(participants, eq(participants.conversationId, conversations.id))
+        .where(eq(participants.userId, userId));
+
+      const views: ConversationView[] = [];
+      for (const { conversations: row } of rows) {
+        const [last] = await db
+          .select()
+          .from(messages)
+          .where(eq(messages.conversationId, row.id))
+          .orderBy(desc(messages.seq))
+          .limit(1);
+        views.push({
+          ...conversationOf(row),
+          participants: await participantsIn(row.id),
+          lastMessage: last === undefined ? undefined : await withFiles(last),
+          unread: await unreadOf(row.id, userId),
+        });
+      }
+      return views.sort((a, b) => (b.lastMessage?.seq ?? 0) - (a.lastMessage?.seq ?? 0));
     },
 
-    participantsOf(conversationId) {
-      return participantsIn(conversationId);
-    },
+    participantsOf: participantsIn,
 
-    conversationOfMessage(messageId) {
-      const row = db.prepare("SELECT conversation_id FROM messages WHERE id = ?").get(messageId);
-      return row === undefined ? undefined : text(row, "conversation_id");
+    async conversationOfMessage(messageId) {
+      return (await byId(messageId))?.conversationId;
     },
 
     send({ conversationId, authorId, text, messageId, attachmentIds = [] }) {
-      const body = text.trim();
-      // A file IS the message when there are no words, which is how anybody sends a photo.
-      if (body === "" && attachmentIds.length === 0) throw new Error("empty_message");
-      if (body.length > MAX_TEXT) throw new Error("message_too_long");
-      if (isParticipant.get(conversationId, authorId) === undefined) throw new Error("not_a_participant");
-      // The id may be given so that the same send arriving twice is one message: a retry upstream
-      // must not become two lines in somebody's conversation.
-      const id = messageId ?? randomUUID();
-      const already = messageById.get(id);
-      if (already !== undefined) return withFiles(already);
-      // Checked BEFORE the message exists, so a half-uploaded file cannot leave a message pointing
-      // at nothing. `ready` refuses anything unfinished or already owned, by name.
-      media.ready(attachmentIds);
-      insertMessage.run(id, conversationId, authorId, body, new Date().toISOString());
-      media.bind(attachmentIds, id);
-      return withFiles(must(messageById.get(id)));
+      return database.write(async () => {
+        const body = text.trim();
+        // A file IS the message when there are no words, which is how anybody sends a photo.
+        if (body === "" && attachmentIds.length === 0) throw new Error("empty_message");
+        if (body.length > MAX_TEXT) throw new Error("message_too_long");
+        if (!(await isParticipant(conversationId, authorId))) throw new Error("not_a_participant");
+
+        // The id may be given so that the same send arriving twice is one message: a retry upstream
+        // must not become two lines in somebody's conversation.
+        const id = messageId ?? randomUUID();
+        const already = await byId(id);
+        if (already !== undefined) return withFiles(already);
+
+        // Checked BEFORE the message exists, so a half-uploaded file cannot leave a message pointing
+        // at nothing. `ready` refuses anything unfinished or already owned, by name.
+        await media.ready(attachmentIds);
+        await db
+          .insert(messages)
+          .values({ id, conversationId, authorId, text: body, at: new Date().toISOString() });
+        await media.bind(attachmentIds, id);
+
+        const stored = await byId(id);
+        if (stored === undefined) throw new Error("chat_failed");
+        return withFiles(stored);
+      });
     },
 
-    messagesOf(conversationId, options) {
+    async messagesOf(conversationId, options) {
       const limit = Math.min(Math.max(options?.limit ?? 50, 1), 200);
       const before = options?.before;
-      const rows =
-        before === undefined
-          ? (pageFromTop.all(conversationId, limit))
-          : (pageBefore.all(conversationId, before, limit));
-      // Read newest-first so the limit takes the newest page, then handed back oldest-first, which
-      // is the order a conversation is read in.
-      return rows.map(withFiles).reverse();
+      const rows = await db
+        .select()
+        .from(messages)
+        .where(
+          before === undefined
+            ? eq(messages.conversationId, conversationId)
+            : and(eq(messages.conversationId, conversationId), lt(messages.seq, before)),
+        )
+        // Newest first so the limit takes the newest page; handed back oldest-first below, which is
+        // the order a conversation is read in.
+        .orderBy(desc(messages.seq))
+        .limit(limit);
+
+      const page: Message[] = [];
+      for (const row of rows.reverse()) page.push(await withFiles(row));
+      return page;
     },
 
-    markRead(conversationId, userId, through) {
-      // `MAX` so that reading an older message never un-reads a newer one: with two tabs open, the
+    async markRead(conversationId, userId, through) {
+      // `max` so that reading an older message never un-reads a newer one: with two tabs open, the
       // one showing yesterday would otherwise push the badge back up.
-      readThrough.run(through, conversationId, userId);
+      await db
+        .update(participants)
+        .set({ readThrough: sql`max(${participants.readThrough}, ${through})` })
+        .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, userId)));
     },
 
-    unreadFor(userId) {
-      return count(unreadEverywhere.get(userId, userId), "n");
+    async unreadFor(userId) {
+      const [row] = await db
+        .select({ n: sql<number>`count(*)` })
+        .from(messages)
+        .innerJoin(participants, eq(participants.conversationId, messages.conversationId))
+        .where(
+          and(
+            eq(participants.userId, userId),
+            sql`${messages.seq} > ${participants.readThrough}`,
+            ne(messages.authorId, userId),
+          ),
+        );
+      return row?.n ?? 0;
     },
 
-    exportAll() {
+    async exportAll() {
+      const rows = await db.select().from(messages).orderBy(messages.seq);
+      const all: Message[] = [];
+      for (const row of rows) all.push(await withFiles(row));
       return {
-        conversations: db.prepare("SELECT * FROM conversations").all().map(conversationOf),
-        participants: db.prepare("SELECT * FROM participants").all(),
-        messages: db.prepare("SELECT * FROM messages ORDER BY seq").all().map(withFiles),
-        ...media.export(),
+        conversations: (await db.select().from(conversations)).map(conversationOf),
+        participants: await db.select().from(participants),
+        messages: all,
+        ...(await media.export()),
       };
     },
 
     deleteAll() {
-      // The files first: they are what a company would most mind leaving behind.
-      media.clear();
-      db.exec("DELETE FROM messages; DELETE FROM participants; DELETE FROM conversations;");
+      return database.write(async () => {
+        // The files first: they are what a company would most mind leaving behind.
+        await media.clear();
+        await db.delete(messages);
+        await db.delete(participants);
+        await db.delete(conversations);
+      });
     },
 
     close() {
-      db.close();
+      database.close();
     },
 
     media,

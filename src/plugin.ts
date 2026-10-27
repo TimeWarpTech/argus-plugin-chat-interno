@@ -205,19 +205,22 @@ const plugin = definePlugin({
             }
           },
 
-          Conversations: (_input: unknown, call?: ServedCall) => {
+          Conversations: async (_input: unknown, call?: ServedCall) => {
             const me = authorOf(call);
             if (me === undefined) return refusal(NO_CALLER);
-            return { conversations: storage().conversationsOf(me), unread: storage().unreadFor(me) };
+            return {
+              conversations: await storage().conversationsOf(me),
+              unread: await storage().unreadFor(me),
+            };
           },
 
-          OpenDirect: (input: unknown, call?: ServedCall) => {
+          OpenDirect: async (input: unknown, call?: ServedCall) => {
             const me = authorOf(call);
             if (me === undefined) return refusal(NO_CALLER);
             const withUserId = stringAt(input, "withUserId");
             if (withUserId === undefined) return refusal("no_such_colleague");
             try {
-              return { conversation: storage().openDirect(me, withUserId) };
+              return { conversation: await storage().openDirect(me, withUserId) };
             } catch (error) {
               return refusal(codeOf(error));
             }
@@ -229,29 +232,29 @@ const plugin = definePlugin({
            * Another plugin opening a room — an automation starting a shift channel — has no person
            * to name, and opening a room forges nobody's words. Writing in it still demands a caller.
            */
-          OpenGroup: (input: unknown, call?: ServedCall) => {
+          OpenGroup: async (input: unknown, call?: ServedCall) => {
             const name = stringAt(input, "name");
             if (name === undefined) return refusal("empty_name");
             const me = authorOf(call) ?? "system";
             try {
-              return { conversation: storage().openGroup(name, me, stringsAt(input, "memberIds")) };
+              return { conversation: await storage().openGroup(name, me, stringsAt(input, "memberIds")) };
             } catch (error) {
               return refusal(codeOf(error));
             }
           },
 
-          Messages: (input: unknown, call?: ServedCall) => {
+          Messages: async (input: unknown, call?: ServedCall) => {
             const me = authorOf(call);
             if (me === undefined) return refusal(NO_CALLER);
             const conversationId = stringAt(input, "conversationId");
             if (conversationId === undefined) return refusal("no_such_conversation");
-            if (!storage().participantsOf(conversationId).includes(me)) {
+            if (!(await storage().participantsOf(conversationId)).includes(me)) {
               return refusal("not_a_participant");
             }
             const before = numberAt(input, "before");
             const limit = numberAt(input, "limit");
             return {
-              messages: storage().messagesOf(conversationId, {
+              messages: await storage().messagesOf(conversationId, {
                 ...(before === undefined ? {} : { before }),
                 ...(limit === undefined ? {} : { limit }),
               }),
@@ -269,7 +272,7 @@ const plugin = definePlugin({
             try {
               // The author is the person the KERNEL named. Whatever the input claims is ignored:
               // taking it from there is how anyone writes as anyone.
-              const message = storage().send({
+              const message = await storage().send({
                 conversationId,
                 authorId: me,
                 text,
@@ -277,15 +280,15 @@ const plugin = definePlugin({
                 ...(messageId === undefined ? {} : { messageId }),
               });
               // Sending is reading, for the sender: their own message must not come back unread.
-              storage().markRead(conversationId, me, message.seq);
-              await announceMessage(message, storage().participantsOf(conversationId));
+              await storage().markRead(conversationId, me, message.seq);
+              await announceMessage(message, await storage().participantsOf(conversationId));
               return { message };
             } catch (error) {
               return refusal(codeOf(error));
             }
           },
 
-          MarkRead: (input: unknown, call?: ServedCall) => {
+          MarkRead: async (input: unknown, call?: ServedCall) => {
             const me = authorOf(call);
             if (me === undefined) return refusal(NO_CALLER);
             const conversationId = stringAt(input, "conversationId");
@@ -293,8 +296,8 @@ const plugin = definePlugin({
             if (conversationId === undefined || through === undefined) {
               return refusal("no_such_conversation");
             }
-            storage().markRead(conversationId, me, through);
-            return { unread: storage().unreadFor(me) };
+            await storage().markRead(conversationId, me, through);
+            return { unread: await storage().unreadFor(me) };
           },
 
           /**
@@ -305,7 +308,7 @@ const plugin = definePlugin({
            * ships this exact shape. Reusing it rather than inventing a second one is the difference
            * between one format and two that disagree about a boundary and corrupt a file.
            */
-          CreateAttachment: (input: unknown, call?: ServedCall) => {
+          CreateAttachment: async (input: unknown, call?: ServedCall) => {
             if (authorOf(call) === undefined) return refusal(NO_CALLER);
             const size = asRecord(input).size;
             const name = stringAt(input, "name");
@@ -314,13 +317,13 @@ const plugin = definePlugin({
               return refusal("invalid_attachment");
             }
             try {
-              return storage().media.create(name, mimeType, size);
+              return await storage().media.create(name, mimeType, size);
             } catch (error) {
               return refusal(codeOf(error));
             }
           },
 
-          WriteAttachment: (input: unknown, call?: ServedCall) => {
+          WriteAttachment: async (input: unknown, call?: ServedCall) => {
             if (authorOf(call) === undefined) return refusal(NO_CALLER);
             const attachmentId = stringAt(input, "attachmentId");
             const data = stringAt(input, "data");
@@ -329,7 +332,7 @@ const plugin = definePlugin({
               return refusal("invalid_media_chunk");
             }
             try {
-              return storage().media.write(attachmentId, offset, data);
+              return await storage().media.write(attachmentId, offset, data);
             } catch (error) {
               return refusal(codeOf(error));
             }
@@ -341,7 +344,7 @@ const plugin = definePlugin({
            * Whoever asks must be in the conversation that message belongs to — checked here, where
            * the caller is known, rather than inside the store, which only knows about rows.
            */
-          ReadAttachment: (input: unknown, call?: ServedCall) => {
+          ReadAttachment: async (input: unknown, call?: ServedCall) => {
             const me = authorOf(call);
             if (me === undefined) return refusal(NO_CALLER);
             const attachmentId = stringAt(input, "attachmentId");
@@ -350,25 +353,25 @@ const plugin = definePlugin({
             if (attachmentId === undefined || messageId === undefined || offset === undefined) {
               return refusal("invalid_request");
             }
-            const conversationId = storage().conversationOfMessage(messageId);
+            const conversationId = await storage().conversationOfMessage(messageId);
             if (conversationId === undefined) return refusal("no_such_conversation");
-            if (!storage().participantsOf(conversationId).includes(me)) {
+            if (!(await storage().participantsOf(conversationId)).includes(me)) {
               return refusal("not_a_participant");
             }
             try {
-              return storage().media.readChunk(attachmentId, messageId, offset);
+              return await storage().media.readChunk(attachmentId, messageId, offset);
             } catch (error) {
               return refusal(codeOf(error));
             }
           },
 
           /** Drops an upload nobody sent yet, so a cancelled attachment leaves nothing behind. */
-          DeleteAttachment: (input: unknown, call?: ServedCall) => {
+          DeleteAttachment: async (input: unknown, call?: ServedCall) => {
             if (authorOf(call) === undefined) return refusal(NO_CALLER);
             const attachmentId = stringAt(input, "attachmentId");
             if (attachmentId === undefined) return refusal("invalid_request");
             try {
-              return storage().media.remove(attachmentId);
+              return await storage().media.remove(attachmentId);
             } catch (error) {
               return refusal(codeOf(error));
             }
@@ -376,8 +379,8 @@ const plugin = definePlugin({
 
           /** Demanded by the handshake, and by anybody who wants to leave with what they wrote. */
           ExportTenantData: () => storage().exportAll(),
-          DeleteTenantData: () => {
-            storage().deleteAll();
+          DeleteTenantData: async () => {
+            await storage().deleteAll();
             return {};
           },
         },

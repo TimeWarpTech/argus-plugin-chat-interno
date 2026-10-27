@@ -13,7 +13,7 @@ import {
 } from "@creativepetabyte/argus-sdk";
 import { createFakeHost, type FakeHost } from "@creativepetabyte/argus-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import plugin, { CHAT, MESSAGE_SENT } from "./plugin.js";
+import plugin, { CHAT, MESSAGE_SENT } from "../src/plugin.js";
 
 let folders: string[] = [];
 /** Every company built in a test, so each one lets go of its SQLite file before it is deleted. */
