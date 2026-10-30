@@ -8,6 +8,7 @@
  */
 import { type Attachment, downloadMedia, type MediaCall } from "@creativepetabyte/argus-chat-media";
 import { useEffect, useRef, useState } from "react";
+import { Viewer, type Viewing } from "./viewer";
 import type { Words } from "./words";
 
 const isImage = (file: Attachment) => file.mimeType.startsWith("image/");
@@ -64,6 +65,8 @@ function AttachmentView({ file, messageId, call, words, locale }: OneProps) {
   const [state, setState] = useState<"idle" | "loading" | "failed">("idle");
   /** Set when the bytes arrived but the browser could not decode them. */
   const [undrawable, setUndrawable] = useState(false);
+  /** The picture somebody opened to look at, full size. */
+  const [viewing, setViewing] = useState<Viewing>();
   const held = useRef<string | undefined>(undefined);
 
   const fetchIt = async () => {
@@ -101,11 +104,23 @@ function AttachmentView({ file, messageId, call, words, locale }: OneProps) {
 
   if (url !== undefined && isImage(file) && !undrawable) {
     return (
-      <a className="ci-shot" href={url} download={file.name} title={file.name}>
-        {/* A file that says it is an image but cannot be decoded falls back to the card below,
-            rather than leaving a silent blank where a picture should be. */}
-        <img src={url} alt={file.name} loading="lazy" onError={() => setUndrawable(true)} />
-      </a>
+      <>
+        <button
+          type="button"
+          className="ci-shot"
+          title={file.name}
+          // Clicking an image opens it. It used to download it, which is almost never what somebody
+          // wants from a picture in a conversation.
+          onClick={() => setViewing({ url, name: file.name })}
+        >
+          {/* A file that says it is an image but cannot be decoded falls back to the card below,
+              rather than leaving a silent blank where a picture should be. */}
+          <img src={url} alt={file.name} loading="lazy" onError={() => setUndrawable(true)} />
+        </button>
+        {viewing !== undefined && (
+          <Viewer viewing={viewing} words={words} onClose={() => setViewing(undefined)} />
+        )}
+      </>
     );
   }
 

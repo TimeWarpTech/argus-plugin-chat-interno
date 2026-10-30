@@ -585,6 +585,82 @@
 }
 
 /*
+ * The picture, opened.
+ *
+ * Fixed to the viewport so it covers the product's window, while living inside this plugin's own
+ * shadow root -- it reaches nothing outside its tree to do it.
+ */
+.ci-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgb(0 0 0 / 82%);
+  cursor: zoom-out;
+}
+
+.ci-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: #fff;
+}
+
+.ci-viewer-name {
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ci-viewer-action {
+  flex: none;
+  padding: 0.375rem 0.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: rgb(255 255 255 / 14%);
+  color: #fff;
+  font: inherit;
+  font-size: 0.875rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ci-viewer-action:hover {
+  background: rgb(255 255 255 / 24%);
+}
+
+.ci-viewer-action:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.ci-viewer-image {
+  place-self: center;
+  max-width: 100%;
+  /* Minus the bar and the padding, so the picture never pushes itself off the screen. */
+  max-height: calc(100vh - 5rem);
+  object-fit: contain;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ci-viewer {
+    animation: ci-opened 120ms ease-out;
+  }
+}
+
+@keyframes ci-opened {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
  * A picture is shown at its own size, bounded.
  *
  * Never stretched to fill: a small image blown up to the width of a bubble looks broken, and the
@@ -592,6 +668,10 @@
  */
 .ci-shot {
   display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
   width: fit-content;
   max-width: min(100%, 20rem);
   border-radius: 0.375rem;
@@ -696,3 +776,7 @@
     display: flex;
   }
 }
+
+/* rebuild com o plugin no ar */
+
+.ci-marca-de-rebuild { color: inherit; }

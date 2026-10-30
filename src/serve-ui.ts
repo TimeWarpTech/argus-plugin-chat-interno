@@ -1,34 +1,24 @@
 /**
- * Entrega o bundle da tela, e so isso: um endereco, um arquivo.
+ * Entrega o bundle da tela: um endereço, uma pasta.
  *
- * Separado do processo do plugin porque o bundle e os MESMOS bytes para toda empresa -- ele e
- * servido por um processo da implantacao, nao de dentro do plugin. E por isso que o processo pode
- * rodar na maquina de quem desenvolve enquanto o bundle mora num endereco publico: o que precisa
- * casar e o `integrity`, que o plugin calcula lendo o mesmo arquivo.
+ * Separado do processo do plugin porque o bundle são os MESMOS bytes para toda empresa — é servido
+ * por um processo da implantação, não de dentro do plugin. Por isso o processo pode rodar na máquina
+ * de quem desenvolve enquanto o bundle mora num endereço público: o que precisa casar é o
+ * `integrity`, que o runtime calcula do que ESTE servidor está entregando.
+ *
+ * O servir em si é do SDK. Era o mesmo arquivo em todo plugin com tela, junto com as partes fáceis
+ * de errar em silêncio: o content-type, o CORS sem o qual o navegador pula a verificação de
+ * integridade, o `no-store` e a recusa de caminho que sai da pasta. Esta cópia servia só `ui.js` —
+ * um bundle com folha de estilo própria daria 404.
  */
-import { readFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { serveBundle } from "@creativepetabyte/argus-sdk";
 
-const port = Number(process.env.PLUGIN_UI_PORT ?? 4640);
-const bundle = fileURLToPath(new URL("../ui/dist/ui.js", import.meta.url));
-
-createServer((request, response) => {
-  if (request.url !== "/ui.js") {
-    response.writeHead(404).end();
-    return;
-  }
-  readFile(bundle).then(
-    (conteudo) => {
-      response
-        .writeHead(200, {
-          "content-type": "text/javascript; charset=utf-8",
-          // O kernel prende o bundle por `integrity`; a origem e aprovada pelo operador.
-          "access-control-allow-origin": "*",
-          "cache-control": "no-store",
-        })
-        .end(conteudo);
-    },
-    () => response.writeHead(500).end(),
-  );
-}).listen(port, "0.0.0.0", () => console.log(`[chat.internal] bundle em http://localhost:${port}/ui.js`));
+serveBundle({
+  directory: join(dirname(fileURLToPath(import.meta.url)), "..", "ui", "dist"),
+  // Abaixo de 49152: acima disso o Windows entrega a faixa para conexões de saída, e o bind falha
+  // de vez em quando sem padrão.
+  port: Number(process.env.PLUGIN_UI_PORT ?? 4640),
+  pluginId: "chat.internal",
+});

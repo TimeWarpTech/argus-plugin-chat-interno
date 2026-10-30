@@ -12,11 +12,12 @@
  */
 import {
   definePlugin,
-  eventsEmitScope,
+  emitOwnEvents,
   type PluginContext,
+  readMembers,
+  screens,
   type ServedCall,
 } from "@creativepetabyte/argus-sdk";
-import { integrityOf, PAGE_COMPONENT, UI_URL } from "./bundle.js";
 import { openStore, type Message, type Store } from "./store.js";
 
 export const PLUGIN_ID = "chat.internal";
@@ -44,12 +45,15 @@ export const MESSAGE_SENT = "chat.internal.v1.MessageSent";
 const SCREEN_PATH = "chat-interno";
 
 /**
- * What is at the screen's address, hashed.
+ * The address the operator approved, and the one the browser downloads from.
  *
- * Resolved once, at startup, before anything is announced -- see `bundle.ts` for why it asks the
- * address rather than the disk.
+ * Nothing here hashes it: the RUNTIME pins what this address is serving, just before every
+ * handshake — including after a reconnection, which a hash taken at startup cannot do.
  */
-const HASH = await integrityOf((line) => console.log(`[${PLUGIN_ID}] ${line}`));
+const UI_URL = process.env.PLUGIN_UI_URL ?? "http://localhost:4640/ui.js";
+
+/** The name of the export the page is drawn from. A NAME, resolved against the bundle. */
+const PAGE_COMPONENT = "ChatInternoPage";
 
 /** An answer a screen can translate. The API returns codes, never sentences. */
 type Refusal = { error: string };
@@ -89,43 +93,20 @@ const plugin = definePlugin({
     serves: [CHAT],
     emits: [MESSAGE_SENT],
     requestedScopes: [
-      {
-        // Emitting is a permission, not plumbing: without this every emit answers 403 and the
-        // refusal is recorded. Essential because a chat whose screens never update is not a chat.
-        name: eventsEmitScope(PLUGIN_ID),
-        description: "Avisar as telas abertas de cada mensagem nova",
-        essential: true,
-      },
-      {
-        // The staff directory, which is the only thing this plugin asks of the kernel. Essential:
-        // a chat that cannot name a single colleague has nobody to open a conversation with.
-        //
-        // Spelled out rather than built, because the SDK has no builder for it -- `eventsEmitScope`
-        // and friends cover events and calls, and this one is the kernel's own capability.
-        name: MEMBERS_READ,
-        description: "Ver quem trabalha nesta empresa, para você escolher com quem falar",
-        essential: true,
-      },
+      emitOwnEvents(PLUGIN_ID, "Avisar as telas abertas de cada mensagem nova"),
+      readMembers("Ver quem trabalha nesta empresa, para você escolher com quem falar"),
     ],
-    ...(HASH === undefined ? {} : { ui: { url: UI_URL, integrity: HASH } }),
-    pages:
-      HASH === undefined
-        ? []
-        : [{ path: SCREEN_PATH, title: "Chat interno", component: PAGE_COMPONENT }],
-    slots: [
-      {
-        id: `${PLUGIN_ID}:rail`,
-        slot: "shell.nav.rail",
-        // A plugin's page is mounted under `plugins/`, never at the top level -- the shell puts it
-        // there so a plugin cannot shadow a screen of the product's own. The link has to say the
-        // same, and it is relative: a leading `/app` lands on `/app/app/...`.
-        content: { kind: "link", label: "Chat interno", icon: "message-circle", to: `plugins/${SCREEN_PATH}` },
-      },
-    ],
-    messages: {
-      "pt-BR": { title: "Chat interno" },
-      en: { title: "Internal chat" },
-    },
+    ...screens({
+      url: UI_URL,
+      pages: [
+        {
+          path: SCREEN_PATH,
+          title: { "pt-BR": "Chat interno", en: "Internal chat" },
+          component: PAGE_COMPONENT,
+          rail: { icon: "message-circle" },
+        },
+      ],
+    }),
   },
 
   create(ctx: PluginContext) {
