@@ -39,14 +39,7 @@ export function Attachments({ files, messageId, call, words, locale }: Props) {
   return (
     <>
       {files.map((file) => (
-        <AttachmentView
-          key={file.id}
-          file={file}
-          messageId={messageId}
-          call={call}
-          words={words}
-          locale={locale}
-        />
+        <AttachmentView key={file.id} file={file} messageId={messageId} call={call} words={words} locale={locale} />
       ))}
     </>
   );
@@ -86,6 +79,7 @@ function AttachmentView({ file, messageId, call, words, locale }: OneProps) {
   };
 
   // An image is what the conversation is about, so it arrives without being asked for.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the file id on purpose. `fetchIt` is a new function every render and `file` a new object, so either one in the list would re-run the effect on every render -- and the cleanup revokes the blob URL, so the picture would be torn down right after it loaded.
   useEffect(() => {
     if (isImage(file)) void fetchIt();
     // Let go of the blob when this message leaves the screen, or the tab keeps every file ever seen.
@@ -95,7 +89,6 @@ function AttachmentView({ file, messageId, call, words, locale }: OneProps) {
         held.current = undefined;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file.id]);
 
   if (state === "failed") {
@@ -117,20 +110,18 @@ function AttachmentView({ file, messageId, call, words, locale }: OneProps) {
               rather than leaving a silent blank where a picture should be. */}
           <img src={url} alt={file.name} loading="lazy" onError={() => setUndrawable(true)} />
         </button>
-        {viewing !== undefined && (
-          <Viewer viewing={viewing} words={words} onClose={() => setViewing(undefined)} />
-        )}
+        {viewing !== undefined && <Viewer viewing={viewing} words={words} onClose={() => setViewing(undefined)} />}
       </>
     );
   }
 
   if (url !== undefined && isVideo(file)) {
-    // eslint-disable-next-line jsx-a11y/media-has-caption
+    // biome-ignore lint/a11y/useMediaCaption: a video somebody dropped into a conversation has no caption track and no way to get one; the alternative to showing it is not showing it.
     return <video className="ci-shot" src={url} controls preload="metadata" />;
   }
 
   if (url !== undefined && isAudio(file)) {
-    // eslint-disable-next-line jsx-a11y/media-has-caption
+    // biome-ignore lint/a11y/useMediaCaption: same as the video above -- a voice note carries no transcript.
     return <audio className="ci-audio" src={url} controls preload="metadata" />;
   }
 

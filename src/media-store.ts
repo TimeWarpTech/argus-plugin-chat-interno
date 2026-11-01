@@ -124,13 +124,7 @@ export class MediaStore {
       const [row] = await this.db
         .select()
         .from(attachments)
-        .where(
-          and(
-            eq(attachments.id, id),
-            isNull(attachments.messageId),
-            eq(attachments.received, attachments.size),
-          ),
-        );
+        .where(and(eq(attachments.id, id), isNull(attachments.messageId), eq(attachments.received, attachments.size)));
       if (row === undefined) throw new Error("attachment_not_ready");
       found.push(attachmentOf(row));
     }
@@ -163,8 +157,7 @@ export class MediaStore {
    * make every file in the company readable by anybody who guessed one.
    */
   async readChunk(attachmentId: string, messageId: string, offset: number): Promise<{ data: string }> {
-    if (!Number.isInteger(offset) || offset < 0 || offset % MEDIA_CHUNK_BYTES !== 0)
-      throw new Error("invalid_request");
+    if (!Number.isInteger(offset) || offset < 0 || offset % MEDIA_CHUNK_BYTES !== 0) throw new Error("invalid_request");
     const [row] = await this.db
       .select({ data: attachmentChunks.data })
       .from(attachmentChunks)

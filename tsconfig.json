@@ -9,16 +9,8 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": [
-      "node"
-    ]
+    "types": ["node"]
   },
-  "include": [
-    "src",
-    "tests",
-    "drizzle.config.ts"
-  ],
-  "exclude": [
-    "tests/ui"
-  ]
+  "include": ["src", "tests", "drizzle.config.ts"],
+  "exclude": ["tests/ui"]
 }

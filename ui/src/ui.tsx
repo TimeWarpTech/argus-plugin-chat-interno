@@ -6,14 +6,9 @@
  * `call` is the only door, and the kernel decides who the caller is, which is why nothing sent from
  * here carries an author.
  */
-import {
-  type Attachment,
-  MAX_MEDIA_BYTES,
-  type MediaCall,
-  uploadMedia,
-} from "@creativepetabyte/argus-chat-media";
+import { type Attachment, MAX_MEDIA_BYTES, type MediaCall, uploadMedia } from "@creativepetabyte/argus-chat-media";
 import type { DomNode, PluginHostProps } from "@creativepetabyte/argus-sdk/ui";
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Attachments, sizeOf } from "./attachments";
 import {
   CHAT,
@@ -30,7 +25,7 @@ import {
 } from "./model";
 import styles from "./style.css?inline";
 import { useChat } from "./use-chat";
-import { wordsFor, type Words } from "./words";
+import { type Words, wordsFor } from "./words";
 
 export const css = styles;
 
@@ -54,24 +49,19 @@ export function ChatInternoPage({
    * until it has one.
    */
   const mediaCall = useMemo(
-    () => (call === undefined ? undefined : (method: string, input: Record<string, unknown>) =>
-      call(CHAT, method, input)),
+    () =>
+      call === undefined ? undefined : (method: string, input: Record<string, unknown>) => call(CHAT, method, input),
     [call],
   );
 
-  const time = useMemo(
-    () => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }),
-    [locale],
-  );
+  const time = useMemo(() => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }), [locale]);
   const number = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
   const nameOf = (userId: string): string =>
     chat.colleagues.find((colleague) => colleague.userId === userId)?.name ?? userId;
 
   const titleOf = (conversation: Conversation): string =>
-    conversation.kind === "group"
-      ? (conversation.name ?? words.group)
-      : nameOf(otherSideOf(conversation, me));
+    conversation.kind === "group" ? (conversation.name ?? words.group) : nameOf(otherSideOf(conversation, me));
 
   /** A group is drawn by its own id, a direct conversation by whoever is on the other side. */
   const faceOf = (conversation: Conversation): string =>
@@ -166,8 +156,7 @@ export function ChatInternoPage({
                 <span className="ci-who-meta">
                   {open.kind === "group"
                     ? words.people.replace("{n}", number.format(open.participants.length))
-                    : (chat.colleagues.find((colleague) => colleague.userId === otherSideOf(open, me))
-                        ?.role ?? "")}
+                    : (chat.colleagues.find((colleague) => colleague.userId === otherSideOf(open, me))?.role ?? "")}
                 </span>
               </span>
               {/* Somebody else's contribution, drawn in its own shadow root and its own error
@@ -207,15 +196,7 @@ export function ChatInternoPage({
   );
 }
 
-function Avatar({
-  name,
-  person,
-  size = "sm",
-}: {
-  name: string;
-  person: string;
-  size?: "sm" | "md";
-}) {
+function Avatar({ name, person, size = "sm" }: { name: string; person: string; size?: "sm" | "md" }) {
   return (
     <span
       className={`ci-avatar ci-avatar-${size}`}
@@ -308,10 +289,19 @@ function Thread({
   locale: string;
 }) {
   const bottom = useRef<HTMLDivElement>(null);
-  // Jump to the end whenever the thread grows: a chat is read from the bottom.
-  useMemo(() => {
-    queueMicrotask(() => bottom.current?.scrollIntoView({ block: "end" }));
-  }, [days]);
+  /**
+   * Jump to the end whenever the thread grows: a chat is read from the bottom.
+   *
+   * An effect, not a memo. A memo body runs DURING render, so the node it scrolled to was the one
+   * from the previous paint -- the `queueMicrotask` here was working around exactly that. And the
+   * key is the last message, not the whole `days` array: `days` is regrouped when the locale or the
+   * wording changes too, and changing language should not yank somebody away from what they were
+   * reading further up.
+   */
+  const lastMessageId = days.at(-1)?.runs.at(-1)?.messages.at(-1)?.id;
+  useEffect(() => {
+    if (lastMessageId !== undefined) bottom.current?.scrollIntoView({ block: "end" });
+  }, [lastMessageId]);
 
   return (
     <div className="ci-log">
@@ -322,10 +312,7 @@ function Thread({
             const mine = run.authorId === me;
             const first = run.messages[0];
             return (
-              <div
-                className={`ci-run${mine ? " is-mine" : ""}`}
-                key={first === undefined ? run.authorId : first.id}
-              >
+              <div className={`ci-run${mine ? " is-mine" : ""}`} key={first === undefined ? run.authorId : first.id}>
                 {/* A name only in a group, and only once per run: in a conversation between two
                     people it is on every line without telling anybody anything. */}
                 {group && !mine && <p className="ci-said">{nameOf(run.authorId)}</p>}

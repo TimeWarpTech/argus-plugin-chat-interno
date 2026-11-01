@@ -5,12 +5,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  type ContractMethods,
-  contextFor,
-  type Host,
-  runPluginConformance,
-} from "@creativepetabyte/argus-sdk";
+import { type ContractMethods, contextFor, type Host, runPluginConformance } from "@creativepetabyte/argus-sdk";
 import { createFakeHost, type FakeHost } from "@creativepetabyte/argus-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin, { CHAT, MESSAGE_SENT } from "../src/plugin.js";
@@ -75,10 +70,7 @@ describe("who is speaking", () => {
     const { methods } = company(createFakeHost());
     const conversation = (await methods.OpenGroup?.({ name: "Plantão" }, {})) as { conversation: { id: string } };
 
-    const answer = await methods.Send?.(
-      { conversationId: conversation.conversation.id, text: "oi" },
-      {},
-    );
+    const answer = await methods.Send?.({ conversationId: conversation.conversation.id, text: "oi" }, {});
 
     expect(answer).toEqual({ error: "no_caller" });
   });
@@ -161,10 +153,7 @@ describe("sending", () => {
       conversation: { id: string };
     };
 
-    const answer = await methods.Send?.(
-      { conversationId: opened.conversation.id, text: "   " },
-      { caller: ANA },
-    );
+    const answer = await methods.Send?.({ conversationId: opened.conversation.id, text: "   " }, { caller: ANA });
 
     expect(answer).toEqual({ error: "empty_message" });
   });

@@ -349,16 +349,8 @@
    * origin for the operator to approve, for a texture nobody looks at directly.
    */
   background-image:
-    repeating-linear-gradient(
-      45deg,
-      color-mix(in srgb, var(--ink) 2.5%, transparent) 0 1px,
-      transparent 1px 14px
-    ),
-    repeating-linear-gradient(
-      -45deg,
-      color-mix(in srgb, var(--ink) 2.5%, transparent) 0 1px,
-      transparent 1px 14px
-    );
+    repeating-linear-gradient(45deg, color-mix(in srgb, var(--ink) 2.5%, transparent) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--ink) 2.5%, transparent) 0 1px, transparent 1px 14px);
 }
 
 .ci-day {
@@ -779,4 +771,6 @@
 
 /* rebuild com o plugin no ar */
 
-.ci-marca-de-rebuild { color: inherit; }
+.ci-marca-de-rebuild {
+  color: inherit;
+}

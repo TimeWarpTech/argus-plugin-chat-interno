@@ -16,15 +16,7 @@ export interface Viewing {
   name: string;
 }
 
-export function Viewer({
-  viewing,
-  words,
-  onClose,
-}: {
-  viewing: Viewing;
-  words: Words;
-  onClose(): void;
-}) {
+export function Viewer({ viewing, words, onClose }: { viewing: Viewing; words: Words; onClose(): void }) {
   // Escape closes it, as it closes everything else somebody has ever used.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -35,9 +27,7 @@ export function Viewer({
   }, [onClose]);
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: the backdrop closes on click; the dialog
-    // itself is reachable by keyboard, and Escape closes it.
-    // biome-ignore lint/a11y/useKeyWithClickEvents: same.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop closes on click; the dialog itself is reachable by keyboard, and the Escape handler above is the keyboard equivalent.
     <div className="ci-viewer" role="dialog" aria-modal="true" aria-label={viewing.name} onClick={onClose}>
       <div className="ci-viewer-bar">
         <span className="ci-viewer-name">{viewing.name}</span>
@@ -55,6 +45,8 @@ export function Viewer({
       </div>
       {/* Stops the click from reaching the backdrop: clicking the picture itself should not close
           what somebody opened to look at. */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: this handler only stops the backdrop from
+          closing; it triggers nothing, so there is no action for a key to mirror. */}
       <img
         className="ci-viewer-image"
         src={viewing.url}

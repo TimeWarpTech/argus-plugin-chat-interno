@@ -8,10 +8,11 @@
  * Everything here is asynchronous because Drizzle reaches `node:sqlite` through a proxy (see
  * `db.ts`), and every write goes through `database.write`, which serialises them per company.
  */
-import type { Attachment } from "@creativepetabyte/argus-chat-media";
+
 import { randomUUID } from "node:crypto";
+import type { Attachment } from "@creativepetabyte/argus-chat-media";
 import { and, desc, eq, lt, ne, sql } from "drizzle-orm";
-import { type Database, openDatabase } from "./db.js";
+import { openDatabase } from "./db.js";
 import { MediaStore } from "./media-store.js";
 import { conversations, messages, participants } from "./schema.js";
 
@@ -38,16 +39,30 @@ export interface Message {
   attachments: Attachment[];
 }
 
-export interface ConversationView extends Conversation {
+export interface ConversationSummary extends Conversation {
   participants: string[];
   lastMessage: Message | undefined;
+}
+
+export interface ConversationView extends ConversationSummary {
   unread: number;
 }
 
 export interface Store {
   openDirect(a: string, b: string): Promise<Conversation>;
   openGroup(name: string, createdBy: string, members: readonly string[]): Promise<Conversation>;
+  /** Who is in the room, after adding or removing these people. Groups only. */
+  addMembers(conversationId: string, memberIds: readonly string[]): Promise<string[]>;
+  removeMembers(conversationId: string, memberIds: readonly string[]): Promise<string[]>;
+  renameGroup(conversationId: string, name: string): Promise<Conversation>;
   conversationsOf(userId: string): Promise<ConversationView[]>;
+  /**
+   * Every conversation of the company, with no reader in mind.
+   *
+   * No `unread`, deliberately: unread is a count per person, and nobody is asking. A caller that
+   * wants one asks `conversationsOf` for a person.
+   */
+  allConversations(): Promise<ConversationSummary[]>;
   participantsOf(conversationId: string): Promise<string[]>;
   /** Which conversation a message belongs to, which is what decides who may read its files. */
   conversationOfMessage(messageId: string): Promise<string | undefined>;
@@ -58,6 +73,14 @@ export interface Store {
     messageId?: string;
     attachmentIds?: readonly string[];
   }): Promise<Message>;
+  /**
+   * A message the SYSTEM wrote, which is the only message with no person behind it.
+   *
+   * Separate from `send` because `send` demands that the author be in the room, and the system is in
+   * no room. The author is fixed here -- never read from an argument -- so there is no way to reach
+   * this and write as somebody.
+   */
+  sendAsSystem(input: { conversationId: string; text: string; messageId?: string }): Promise<Message>;
   messagesOf(conversationId: string, options?: { before?: number; limit?: number }): Promise<Message[]>;
   markRead(conversationId: string, userId: string, through: number): Promise<void>;
   unreadFor(userId: string): Promise<number>;
@@ -73,6 +96,9 @@ export interface Store {
   /** The files, kept beside the messages that own them. */
   readonly media: MediaStore;
 }
+
+/** Who a message with nobody behind it is written by. Stored, so a screen can show it as such. */
+export const SYSTEM_AUTHOR = "system";
 
 /** The longest a message may be. Long enough for a paragraph, short enough to bound a row. */
 export const MAX_TEXT = 4000;
@@ -130,6 +156,37 @@ export function openStore(folder: string | undefined): Store {
     const [row] = await db.select().from(messages).where(eq(messages.id, id));
     return row;
   };
+
+  const conversationById = async (id: string) => {
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, id));
+    return row;
+  };
+
+  /** A group, or a refusal by name. Add, remove and rename are group operations and nothing else. */
+  const groupById = async (id: string) => {
+    const row = await conversationById(id);
+    if (row === undefined) throw new Error("no_such_conversation");
+    // A direct conversation IS the two people in it: removing one leaves a history nobody owns, and
+    // renaming one renames nothing, because its name is whoever is on the other side.
+    if (row.kind !== "group") throw new Error("not_a_group");
+    return row;
+  };
+
+  const lastMessageOf = async (conversationId: string): Promise<Message | undefined> => {
+    const [last] = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(desc(messages.seq))
+      .limit(1);
+    return last === undefined ? undefined : await withFiles(last);
+  };
+
+  const summaryOf = async (row: typeof conversations.$inferSelect): Promise<ConversationSummary> => ({
+    ...conversationOf(row),
+    participants: await participantsIn(row.id),
+    lastMessage: await lastMessageOf(row.id),
+  });
 
   const unreadOf = async (conversationId: string, userId: string): Promise<number> => {
     const [row] = await db
@@ -195,6 +252,45 @@ export function openStore(folder: string | undefined): Store {
       });
     },
 
+    addMembers(conversationId, memberIds) {
+      return database.write(async () => {
+        await groupById(conversationId);
+        const rows = [...new Set(memberIds)].map((userId) => ({ conversationId, userId }));
+        // Nothing on conflict: adding somebody already in the room is not a failure, and it must not
+        // reset how far they had read.
+        if (rows.length > 0) await db.insert(participants).values(rows).onConflictDoNothing();
+        return participantsIn(conversationId);
+      });
+    },
+
+    removeMembers(conversationId, memberIds) {
+      return database.write(async () => {
+        const group = await groupById(conversationId);
+        const leaving = new Set(memberIds);
+        // Whoever opened the room stays: a group with nobody in it is a history no screen can reach,
+        // while the messages in it are still there.
+        leaving.delete(group.createdBy);
+        for (const userId of leaving) {
+          await db
+            .delete(participants)
+            .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, userId)));
+        }
+        return participantsIn(conversationId);
+      });
+    },
+
+    renameGroup(conversationId, name) {
+      return database.write(async () => {
+        await groupById(conversationId);
+        const trimmed = name.trim();
+        if (trimmed === "") throw new Error("empty_name");
+        await db.update(conversations).set({ name: trimmed }).where(eq(conversations.id, conversationId));
+        const row = await conversationById(conversationId);
+        if (row === undefined) throw new Error("chat_failed");
+        return conversationOf(row);
+      });
+    },
+
     async conversationsOf(userId) {
       const rows = await db
         .select()
@@ -204,20 +300,15 @@ export function openStore(folder: string | undefined): Store {
 
       const views: ConversationView[] = [];
       for (const { conversations: row } of rows) {
-        const [last] = await db
-          .select()
-          .from(messages)
-          .where(eq(messages.conversationId, row.id))
-          .orderBy(desc(messages.seq))
-          .limit(1);
-        views.push({
-          ...conversationOf(row),
-          participants: await participantsIn(row.id),
-          lastMessage: last === undefined ? undefined : await withFiles(last),
-          unread: await unreadOf(row.id, userId),
-        });
+        views.push({ ...(await summaryOf(row)), unread: await unreadOf(row.id, userId) });
       }
       return views.sort((a, b) => (b.lastMessage?.seq ?? 0) - (a.lastMessage?.seq ?? 0));
+    },
+
+    async allConversations() {
+      const summaries: ConversationSummary[] = [];
+      for (const row of await db.select().from(conversations)) summaries.push(await summaryOf(row));
+      return summaries.sort((a, b) => (b.lastMessage?.seq ?? 0) - (a.lastMessage?.seq ?? 0));
     },
 
     participantsOf: participantsIn,
@@ -243,11 +334,34 @@ export function openStore(folder: string | undefined): Store {
         // Checked BEFORE the message exists, so a half-uploaded file cannot leave a message pointing
         // at nothing. `ready` refuses anything unfinished or already owned, by name.
         await media.ready(attachmentIds);
-        await db
-          .insert(messages)
-          .values({ id, conversationId, authorId, text: body, at: new Date().toISOString() });
+        await db.insert(messages).values({ id, conversationId, authorId, text: body, at: new Date().toISOString() });
         await media.bind(attachmentIds, id);
 
+        const stored = await byId(id);
+        if (stored === undefined) throw new Error("chat_failed");
+        return withFiles(stored);
+      });
+    },
+
+    sendAsSystem({ conversationId, text, messageId }) {
+      return database.write(async () => {
+        const body = text.trim();
+        if (body === "") throw new Error("empty_message");
+        if (body.length > MAX_TEXT) throw new Error("message_too_long");
+        if ((await conversationById(conversationId)) === undefined) throw new Error("no_such_conversation");
+
+        const id = messageId ?? randomUUID();
+        const already = await byId(id);
+        if (already !== undefined) return withFiles(already);
+
+        await db.insert(messages).values({
+          id,
+          conversationId,
+          // Fixed, not taken from the input: this is the whole reason the method exists.
+          authorId: SYSTEM_AUTHOR,
+          text: body,
+          at: new Date().toISOString(),
+        });
         const stored = await byId(id);
         if (stored === undefined) throw new Error("chat_failed");
         return withFiles(stored);
