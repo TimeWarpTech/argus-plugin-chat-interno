@@ -24,14 +24,21 @@ import { AUTOMATION_NODES, automationActions } from "./automation.js";
 import { automationTriggers } from "./automation-triggers.js";
 import {
   CHAT,
+  CONVERSATION_CLEARED,
+  CONVERSATION_DELIVERED,
   CONVERSATION_READ,
+  GROUP_ADMINS_CHANGED,
   GROUP_OPENED,
+  GROUP_UPDATED,
+  MESSAGE_DELETED,
   MESSAGE_SENT,
   PARTICIPANTS_ADDED,
   PARTICIPANTS_REMOVED,
   PLUGIN_ID,
+  TYPING_CHANGED,
 } from "./events.js";
 import { type Message, openStore, type Store, SYSTEM_AUTHOR } from "./store.js";
+import { TypingRegistry } from "./typing.js";
 
 // Re-exported because callers and tests have always read them from here.
 export { AUTOMATION_NODES } from "./automation.js";
@@ -106,7 +113,19 @@ const plugin = definePlugin({
   id: PLUGIN_ID,
   manifest: {
     serves: [CHAT, AUTOMATION_NODES],
-    emits: [MESSAGE_SENT, GROUP_OPENED, PARTICIPANTS_ADDED, PARTICIPANTS_REMOVED, CONVERSATION_READ],
+    emits: [
+      CONVERSATION_DELIVERED,
+      CONVERSATION_CLEARED,
+      TYPING_CHANGED,
+      MESSAGE_SENT,
+      MESSAGE_DELETED,
+      GROUP_OPENED,
+      GROUP_UPDATED,
+      GROUP_ADMINS_CHANGED,
+      PARTICIPANTS_ADDED,
+      PARTICIPANTS_REMOVED,
+      CONVERSATION_READ,
+    ],
     requestedScopes: [
       emitOwnEvents(PLUGIN_ID, "Avisar as telas abertas de cada mensagem nova"),
       readMembers("Ver quem trabalha nesta empresa, para você escolher com quem falar"),
@@ -131,6 +150,7 @@ const plugin = definePlugin({
      * shipped.
      */
     let store: Store | undefined;
+    const typing = new TypingRegistry();
 
     const storage = (): Store => {
       store ??= openStore(ctx.dataDir);
@@ -192,6 +212,65 @@ const plugin = definePlugin({
      * in step.
      */
     const chatMethods = {
+      DeleteConversation: async (input: unknown, call?: ServedCall) => {
+        const me = authorOf(call);
+        if (!me) return refusal(NO_CALLER);
+        const conversationId = stringAt(input, "conversationId");
+        if (!conversationId) return refusal("no_such_conversation");
+        try {
+          await storage().deleteConversation(conversationId, me);
+          await announce(CONVERSATION_CLEARED, { conversationId, userId: me }, conversationId);
+          return { deleted: true };
+        } catch (error) {
+          return refusal(codeOf(error));
+        }
+      },
+
+      LeaveGroup: async (input: unknown, call?: ServedCall) => {
+        const me = authorOf(call);
+        if (!me) return refusal(NO_CALLER);
+        const conversationId = stringAt(input, "conversationId");
+        if (!conversationId) return refusal("no_such_conversation");
+        try {
+          const participants = await storage().leaveGroup(conversationId, me);
+          typing.set(conversationId, me, false);
+          await announce(
+            PARTICIPANTS_REMOVED,
+            { conversationId, memberIds: [me], participants, by: me, at: new Date().toISOString() },
+            conversationId,
+          );
+          return { left: true, participants };
+        } catch (error) {
+          return refusal(codeOf(error));
+        }
+      },
+
+      SetTyping: async (input: unknown, call?: ServedCall) => {
+        const me = authorOf(call);
+        if (!me) return refusal(NO_CALLER);
+        const conversationId = stringAt(input, "conversationId");
+        const active = asRecord(input).active;
+        if (!conversationId || typeof active !== "boolean") return refusal("invalid_typing");
+        if (!(await storage().participantsOf(conversationId)).includes(me)) return refusal("not_a_participant");
+        const expiresAt = typing.set(conversationId, me, active);
+        await announce(TYPING_CHANGED, { conversationId, userId: me, active, expiresAt }, conversationId);
+        return { expiresAt };
+      },
+
+      Typing: async (input: unknown, call?: ServedCall) => {
+        const me = authorOf(call);
+        if (!me) return refusal(NO_CALLER);
+        const conversationId = stringAt(input, "conversationId");
+        if (!conversationId) return refusal("no_such_conversation");
+        const participants = await storage().participantsOf(conversationId);
+        if (!participants.includes(me)) return refusal("not_a_participant");
+        const now = Date.now();
+        return {
+          now,
+          typing: typing.list(conversationId, now).filter((person) => participants.includes(person.userId)),
+        };
+      },
+
       /** The colleagues, from the kernel's directory. Degrades on a host that offers none. */
       Colleagues: async (_input: unknown, call?: ServedCall) => {
         if (authorOf(call) === undefined) return refusal(NO_CALLER);
@@ -265,7 +344,7 @@ const plugin = definePlugin({
         if (conversationId === undefined) return refusal("no_such_conversation");
         const memberIds = stringsAt(input, "memberIds");
         try {
-          const participants = await storage().addMembers(conversationId, memberIds);
+          const participants = await storage().addMembers(conversationId, memberIds, authorOf(call));
           await announce(
             PARTICIPANTS_ADDED,
             {
@@ -288,7 +367,7 @@ const plugin = definePlugin({
         if (conversationId === undefined) return refusal("no_such_conversation");
         const memberIds = stringsAt(input, "memberIds");
         try {
-          const participants = await storage().removeMembers(conversationId, memberIds);
+          const participants = await storage().removeMembers(conversationId, memberIds, authorOf(call));
           await announce(
             PARTICIPANTS_REMOVED,
             {
@@ -307,13 +386,49 @@ const plugin = definePlugin({
       },
 
       /** A group's name, which belongs to the room and not to whoever typed it. */
-      RenameGroup: async (input: unknown) => {
+      RenameGroup: async (input: unknown, call?: ServedCall) => {
         const conversationId = stringAt(input, "conversationId");
         const name = stringAt(input, "name");
         if (conversationId === undefined) return refusal("no_such_conversation");
         if (name === undefined) return refusal("empty_name");
         try {
-          return { conversation: await storage().renameGroup(conversationId, name) };
+          const conversation = await storage().renameGroup(conversationId, name, authorOf(call));
+          await announce(GROUP_UPDATED, { conversationId, name: conversation.name }, conversationId);
+          return { conversation };
+        } catch (error) {
+          return refusal(codeOf(error));
+        }
+      },
+
+      SetGroupAdmin: async (input: unknown, call?: ServedCall) => {
+        const me = authorOf(call);
+        if (me === undefined) return refusal(NO_CALLER);
+        const conversationId = stringAt(input, "conversationId");
+        const memberId = stringAt(input, "memberId");
+        const isAdmin = asRecord(input).isAdmin;
+        if (!conversationId || !memberId || typeof isAdmin !== "boolean") return refusal("invalid_group_role");
+        try {
+          const admins = await storage().setGroupAdmin(conversationId, memberId, isAdmin, me);
+          await announce(GROUP_ADMINS_CHANGED, { conversationId, memberId, isAdmin, admins, by: me }, conversationId);
+          return { conversationId, admins };
+        } catch (error) {
+          return refusal(codeOf(error));
+        }
+      },
+
+      DeleteMessage: async (input: unknown, call?: ServedCall) => {
+        const me = authorOf(call);
+        if (me === undefined) return refusal(NO_CALLER);
+        const messageId = stringAt(input, "messageId");
+        if (!messageId) return refusal("no_such_message");
+        try {
+          const message = await storage().deleteMessage(messageId, me);
+          await announce(
+            MESSAGE_DELETED,
+            { conversationId: message.conversationId, messageId, deletedBy: me, deletedAt: message.deletedAt },
+            message.id,
+          );
+          return { message };
         } catch (error) {
           return refusal(codeOf(error));
         }
@@ -387,6 +502,7 @@ const plugin = definePlugin({
         const limit = numberAt(input, "limit");
         return {
           messages: await storage().messagesOf(conversationId, {
+            userId: me,
             ...(before === undefined ? {} : { before }),
             ...(limit === undefined ? {} : { limit }),
           }),
@@ -413,6 +529,10 @@ const plugin = definePlugin({
           });
           // Sending is reading, for the sender: their own message must not come back unread.
           await storage().markRead(conversationId, me, message.seq);
+          if (typing.list(conversationId).some((person) => person.userId === me)) {
+            const expiresAt = typing.set(conversationId, me, false);
+            await announce(TYPING_CHANGED, { conversationId, userId: me, active: false, expiresAt }, conversationId);
+          }
           await announceMessage(message, await storage().participantsOf(conversationId));
           return { message };
         } catch (error) {
@@ -425,16 +545,42 @@ const plugin = definePlugin({
         if (me === undefined) return refusal(NO_CALLER);
         const conversationId = stringAt(input, "conversationId");
         const through = numberAt(input, "through");
-        if (conversationId === undefined || through === undefined) {
+        if (conversationId === undefined || through === undefined || !Number.isInteger(through) || through < 0) {
           return refusal("no_such_conversation");
         }
-        await storage().markRead(conversationId, me, through);
-        await announce(
-          CONVERSATION_READ,
-          { conversationId, userId: me, through, at: new Date().toISOString() },
-          conversationId,
-        );
-        return { unread: await storage().unreadFor(me) };
+        try {
+          const changed = await storage().markRead(conversationId, me, through);
+          if (changed)
+            await announce(
+              CONVERSATION_READ,
+              { conversationId, userId: me, through, at: new Date().toISOString() },
+              conversationId,
+            );
+          return { unread: await storage().unreadFor(me) };
+        } catch (error) {
+          return refusal(codeOf(error));
+        }
+      },
+
+      MarkDelivered: async (input: unknown, call?: ServedCall) => {
+        const me = authorOf(call);
+        if (!me) return refusal(NO_CALLER);
+        const conversationId = stringAt(input, "conversationId");
+        const through = numberAt(input, "through");
+        if (!conversationId || through === undefined || !Number.isInteger(through) || through < 0)
+          return refusal("no_such_conversation");
+        try {
+          const changed = await storage().markDelivered(conversationId, me, through);
+          if (changed)
+            await announce(
+              CONVERSATION_DELIVERED,
+              { conversationId, userId: me, through, at: new Date().toISOString() },
+              conversationId,
+            );
+          return { delivered: true };
+        } catch (error) {
+          return refusal(codeOf(error));
+        }
       },
 
       /**

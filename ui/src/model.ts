@@ -45,12 +45,18 @@ export interface Message {
   seq: number;
   /** Metadata only. The bytes come piece by piece, over the same contract call. */
   attachments: Attachment[];
+  deletedAt?: string;
+  deletedBy?: string;
+  receipts?: { userId: string; delivered: boolean; read: boolean; deliveredAt: string | null; readAt: string | null }[];
 }
 
 export interface Conversation {
   id: string;
   kind: "direct" | "group";
   name?: string;
+  createdBy?: string;
+  createdAt?: string;
+  admins?: string[];
   participants: string[];
   lastMessage?: Message;
   unread: number;

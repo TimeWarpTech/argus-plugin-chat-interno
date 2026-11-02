@@ -26,6 +26,12 @@ export const MESSAGE_SENT = "chat.internal.v1.MessageSent";
  * no second, private channel for the screen.
  */
 export const GROUP_OPENED = "chat.internal.v1.GroupOpened";
+export const GROUP_UPDATED = "chat.internal.v1.GroupUpdated";
+export const GROUP_ADMINS_CHANGED = "chat.internal.v1.GroupAdminsChanged";
+export const MESSAGE_DELETED = "chat.internal.v1.MessageDeleted";
+export const TYPING_CHANGED = "chat.internal.v1.TypingChanged";
+export const CONVERSATION_CLEARED = "chat.internal.v1.ConversationCleared";
 export const PARTICIPANTS_ADDED = "chat.internal.v1.ParticipantsAdded";
 export const PARTICIPANTS_REMOVED = "chat.internal.v1.ParticipantsRemoved";
 export const CONVERSATION_READ = "chat.internal.v1.ConversationRead";
+export const CONVERSATION_DELIVERED = "chat.internal.v1.ConversationDelivered";

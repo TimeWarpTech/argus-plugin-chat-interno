@@ -1,5 +1,14 @@
 import type { TriggerDefinition } from "@creativepetabyte/argus-automation-nodes";
-import { CONVERSATION_READ, GROUP_OPENED, MESSAGE_SENT, PARTICIPANTS_ADDED, PARTICIPANTS_REMOVED } from "./events.js";
+import {
+  CONVERSATION_READ,
+  GROUP_ADMINS_CHANGED,
+  GROUP_OPENED,
+  GROUP_UPDATED,
+  MESSAGE_DELETED,
+  MESSAGE_SENT,
+  PARTICIPANTS_ADDED,
+  PARTICIPANTS_REMOVED,
+} from "./events.js";
 
 /**
  * Everything this plugin announces, described so a flow can start from it.
@@ -15,6 +24,44 @@ import { CONVERSATION_READ, GROUP_OPENED, MESSAGE_SENT, PARTICIPANTS_ADDED, PART
 const group = { id: "chat-internal", label: { "pt-BR": "Chat interno", en: "Internal chat" } };
 
 export const automationTriggers: TriggerDefinition[] = [
+  {
+    type: GROUP_ADMINS_CHANGED,
+    group,
+    label: { "pt-BR": "Administradores do grupo alterados", en: "Group administrators changed" },
+    description: {
+      "pt-BR": "Inicie quando um participante ganhar ou perder a função de administrador.",
+      en: "Start when a participant becomes or stops being an administrator.",
+    },
+    example: {
+      conversationId: "conversation-example",
+      memberId: "bruno",
+      isAdmin: true,
+      admins: ["ana", "bruno"],
+      by: "ana",
+    },
+  },
+  {
+    type: MESSAGE_DELETED,
+    group,
+    label: { "pt-BR": "Mensagem apagada", en: "Message deleted" },
+    description: {
+      "pt-BR": "Inicie quando uma mensagem for apagada para todos.",
+      en: "Start when a message is deleted for everyone.",
+    },
+    example: {
+      conversationId: "conversation-example",
+      messageId: "message-example",
+      deletedBy: "ana",
+      deletedAt: "2026-01-01T12:00:00.000Z",
+    },
+  },
+  {
+    type: GROUP_UPDATED,
+    group,
+    label: { "pt-BR": "Nome do grupo alterado", en: "Group name changed" },
+    description: { "pt-BR": "Inicie quando o nome de um grupo mudar.", en: "Start when a group's name changes." },
+    example: { conversationId: "conversation-example", name: "Equipe de atendimento" },
+  },
   {
     type: MESSAGE_SENT,
     group,

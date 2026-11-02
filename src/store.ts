@@ -11,10 +11,11 @@
 
 import { randomUUID } from "node:crypto";
 import type { Attachment } from "@creativepetabyte/argus-chat-media";
-import { and, desc, eq, lt, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, ne, sql } from "drizzle-orm";
+import { MAX_TEXT } from "../shared/limits.js";
 import { openDatabase } from "./db.js";
 import { MediaStore } from "./media-store.js";
-import { conversations, messages, participants } from "./schema.js";
+import { attachmentChunks, attachments, conversations, messageReceipts, messages, participants } from "./schema.js";
 
 export type Kind = "direct" | "group";
 
@@ -27,6 +28,14 @@ export interface Conversation {
   createdAt: string;
 }
 
+export interface Receipt {
+  userId: string;
+  delivered: boolean;
+  read: boolean;
+  deliveredAt: string | null;
+  readAt: string | null;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -37,10 +46,14 @@ export interface Message {
   seq: number;
   /** The files this message carries. Metadata only — the bytes are fetched piece by piece. */
   attachments: Attachment[];
+  deletedAt?: string;
+  deletedBy?: string;
+  receipts?: Receipt[];
 }
 
 export interface ConversationSummary extends Conversation {
   participants: string[];
+  admins: string[];
   lastMessage: Message | undefined;
 }
 
@@ -52,9 +65,13 @@ export interface Store {
   openDirect(a: string, b: string): Promise<Conversation>;
   openGroup(name: string, createdBy: string, members: readonly string[]): Promise<Conversation>;
   /** Who is in the room, after adding or removing these people. Groups only. */
-  addMembers(conversationId: string, memberIds: readonly string[]): Promise<string[]>;
-  removeMembers(conversationId: string, memberIds: readonly string[]): Promise<string[]>;
-  renameGroup(conversationId: string, name: string): Promise<Conversation>;
+  addMembers(conversationId: string, memberIds: readonly string[], actorId?: string): Promise<string[]>;
+  removeMembers(conversationId: string, memberIds: readonly string[], actorId?: string): Promise<string[]>;
+  renameGroup(conversationId: string, name: string, actorId?: string): Promise<Conversation>;
+  setGroupAdmin(conversationId: string, memberId: string, isAdmin: boolean, actorId: string): Promise<string[]>;
+  deleteMessage(messageId: string, actorId: string): Promise<Message>;
+  deleteConversation(conversationId: string, userId: string): Promise<void>;
+  leaveGroup(conversationId: string, userId: string): Promise<string[]>;
   conversationsOf(userId: string): Promise<ConversationView[]>;
   /**
    * Every conversation of the company, with no reader in mind.
@@ -81,8 +98,12 @@ export interface Store {
    * this and write as somebody.
    */
   sendAsSystem(input: { conversationId: string; text: string; messageId?: string }): Promise<Message>;
-  messagesOf(conversationId: string, options?: { before?: number; limit?: number }): Promise<Message[]>;
-  markRead(conversationId: string, userId: string, through: number): Promise<void>;
+  messagesOf(
+    conversationId: string,
+    options?: { before?: number; limit?: number; userId?: string },
+  ): Promise<Message[]>;
+  markRead(conversationId: string, userId: string, through: number): Promise<boolean>;
+  markDelivered(conversationId: string, userId: string, through: number): Promise<boolean>;
   unreadFor(userId: string): Promise<number>;
   exportAll(): Promise<{
     conversations: Conversation[];
@@ -90,6 +111,7 @@ export interface Store {
     messages: Message[];
     attachments: unknown[];
     attachmentChunks: unknown[];
+    receipts: unknown[];
   }>;
   deleteAll(): Promise<void>;
   close(): void;
@@ -101,7 +123,7 @@ export interface Store {
 export const SYSTEM_AUTHOR = "system";
 
 /** The longest a message may be. Long enough for a paragraph, short enough to bound a row. */
-export const MAX_TEXT = 4000;
+export { MAX_TEXT } from "../shared/limits.js";
 
 /**
  * What makes a direct conversation unique, whichever way round the two names arrive.
@@ -149,9 +171,30 @@ export function openStore(folder: string | undefined): Store {
     text: row.text,
     at: row.at,
     seq: row.seq,
-    attachments: await media.attachmentsOf(row.id),
+    attachments: row.deletedAt === null ? await media.attachmentsOf(row.id) : [],
+    ...(row.deletedAt === null ? {} : { deletedAt: row.deletedAt }),
+    ...(row.deletedBy === null ? {} : { deletedBy: row.deletedBy }),
   });
 
+  const withReceipts = async (message: Message, userId?: string): Promise<Message> => {
+    if (message.authorId !== userId || message.deletedAt) return message;
+    const rows = await db.select().from(messageReceipts).where(eq(messageReceipts.messageId, message.id));
+    return {
+      ...message,
+      receipts: rows.map(({ userId, delivered, read, deliveredAt, readAt }) => ({
+        userId,
+        delivered,
+        read,
+        deliveredAt,
+        readAt,
+      })),
+    };
+  };
+  const recordRecipients = async (conversationId: string, messageId: string, authorId: string) => {
+    const recipients = (await participantsIn(conversationId)).filter((id) => id !== authorId && id !== SYSTEM_AUTHOR);
+    if (recipients.length > 0)
+      await db.insert(messageReceipts).values(recipients.map((userId) => ({ messageId, userId })));
+  };
   const byId = async (id: string) => {
     const [row] = await db.select().from(messages).where(eq(messages.id, id));
     return row;
@@ -172,11 +215,28 @@ export function openStore(folder: string | undefined): Store {
     return row;
   };
 
-  const lastMessageOf = async (conversationId: string): Promise<Message | undefined> => {
+  const adminsIn = async (conversationId: string): Promise<string[]> => {
+    const rows = await db
+      .select({ userId: participants.userId })
+      .from(participants)
+      .where(and(eq(participants.conversationId, conversationId), eq(participants.isAdmin, true)));
+    return rows.map((row) => row.userId);
+  };
+
+  // An automation has no person to impersonate. A person must hold the group's own role;
+  // their company-wide job title is never used as a group permission.
+  const requireAdmin = async (conversationId: string, actorId?: string) => {
+    await groupById(conversationId);
+    if (actorId === undefined) return;
+    if (!(await isParticipant(conversationId, actorId))) throw new Error("not_a_participant");
+    if (!(await adminsIn(conversationId)).includes(actorId)) throw new Error("admin_required");
+  };
+
+  const lastMessageOf = async (conversationId: string, clearedThrough = 0): Promise<Message | undefined> => {
     const [last] = await db
       .select()
       .from(messages)
-      .where(eq(messages.conversationId, conversationId))
+      .where(and(eq(messages.conversationId, conversationId), gt(messages.seq, clearedThrough)))
       .orderBy(desc(messages.seq))
       .limit(1);
     return last === undefined ? undefined : await withFiles(last);
@@ -185,6 +245,7 @@ export function openStore(folder: string | undefined): Store {
   const summaryOf = async (row: typeof conversations.$inferSelect): Promise<ConversationSummary> => ({
     ...conversationOf(row),
     participants: await participantsIn(row.id),
+    admins: await adminsIn(row.id),
     lastMessage: await lastMessageOf(row.id),
   });
 
@@ -201,10 +262,60 @@ export function openStore(folder: string | undefined): Store {
           eq(messages.conversationId, conversationId),
           sql`${messages.seq} > ${participants.readThrough}`,
           ne(messages.authorId, userId),
+          isNull(messages.deletedAt),
         ),
       );
     return row?.n ?? 0;
   };
+
+  const acknowledge = (conversationId: string, userId: string, through: number, read: boolean) =>
+    database.write(async () => {
+      const [person] = await db
+        .select()
+        .from(participants)
+        .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, userId)));
+      if (!person) throw new Error("not_a_participant");
+      const latest = await lastMessageOf(conversationId);
+      const bound = Math.min(through, latest?.seq ?? 0);
+      const ids = db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(
+          and(
+            eq(messages.conversationId, conversationId),
+            gt(messages.seq, person.clearedThrough),
+            sql`${messages.seq} <= ${bound}`,
+            isNull(messages.deletedAt),
+          ),
+        );
+      const now = new Date().toISOString();
+      const changed = await db
+        .update(messageReceipts)
+        .set(
+          read
+            ? {
+                read: true,
+                delivered: true,
+                readAt: now,
+                deliveredAt: sql`coalesce(${messageReceipts.deliveredAt}, ${now})`,
+              }
+            : { delivered: true, deliveredAt: now },
+        )
+        .where(
+          and(
+            eq(messageReceipts.userId, userId),
+            inArray(messageReceipts.messageId, ids),
+            eq(read ? messageReceipts.read : messageReceipts.delivered, false),
+          ),
+        )
+        .returning({ messageId: messageReceipts.messageId });
+      if (read)
+        await db
+          .update(participants)
+          .set({ readThrough: sql`max(${participants.readThrough}, ${bound})` })
+          .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, userId)));
+      return changed.length > 0 || (read && bound > person.readThrough);
+    });
 
   return {
     openDirect(a, b) {
@@ -212,7 +323,13 @@ export function openStore(folder: string | undefined): Store {
         if (a === b) throw new Error("not_two_people");
         const key = pairKeyOf(a, b);
         const [existing] = await db.select().from(conversations).where(eq(conversations.pairKey, key));
-        if (existing !== undefined) return conversationOf(existing);
+        if (existing !== undefined) {
+          await db
+            .update(participants)
+            .set({ hidden: false })
+            .where(and(eq(participants.conversationId, existing.id), eq(participants.userId, a)));
+          return conversationOf(existing);
+        }
 
         const row = {
           id: randomUUID(),
@@ -247,14 +364,21 @@ export function openStore(folder: string | undefined): Store {
         };
         await db.insert(conversations).values(row);
         const everyone = [...new Set([createdBy, ...members])];
-        await db.insert(participants).values(everyone.map((userId) => ({ conversationId: row.id, userId })));
+        const humanAdmin = createdBy === SYSTEM_AUTHOR ? everyone.find((id) => id !== SYSTEM_AUTHOR) : createdBy;
+        await db.insert(participants).values(
+          everyone.map((userId) => ({
+            conversationId: row.id,
+            userId,
+            isAdmin: userId === createdBy || userId === humanAdmin,
+          })),
+        );
         return conversationOf(row);
       });
     },
 
-    addMembers(conversationId, memberIds) {
+    addMembers(conversationId, memberIds, actorId) {
       return database.write(async () => {
-        await groupById(conversationId);
+        await requireAdmin(conversationId, actorId);
         const rows = [...new Set(memberIds)].map((userId) => ({ conversationId, userId }));
         // Nothing on conflict: adding somebody already in the room is not a failure, and it must not
         // reset how far they had read.
@@ -263,13 +387,20 @@ export function openStore(folder: string | undefined): Store {
       });
     },
 
-    removeMembers(conversationId, memberIds) {
+    removeMembers(conversationId, memberIds, actorId) {
       return database.write(async () => {
         const group = await groupById(conversationId);
+        await requireAdmin(conversationId, actorId);
         const leaving = new Set(memberIds);
         // Whoever opened the room stays: a group with nobody in it is a history no screen can reach,
         // while the messages in it are still there.
         leaving.delete(group.createdBy);
+        const admins = await adminsIn(conversationId);
+        const remainingPeople = (await participantsIn(conversationId)).filter(
+          (id) => id !== SYSTEM_AUTHOR && !leaving.has(id),
+        );
+        if (remainingPeople.length > 0 && !admins.some((id) => id !== SYSTEM_AUTHOR && !leaving.has(id)))
+          throw new Error("last_admin");
         for (const userId of leaving) {
           await db
             .delete(participants)
@@ -279,15 +410,57 @@ export function openStore(folder: string | undefined): Store {
       });
     },
 
-    renameGroup(conversationId, name) {
+    renameGroup(conversationId, name, actorId) {
       return database.write(async () => {
-        await groupById(conversationId);
+        await requireAdmin(conversationId, actorId);
         const trimmed = name.trim();
         if (trimmed === "") throw new Error("empty_name");
         await db.update(conversations).set({ name: trimmed }).where(eq(conversations.id, conversationId));
         const row = await conversationById(conversationId);
         if (row === undefined) throw new Error("chat_failed");
         return conversationOf(row);
+      });
+    },
+
+    setGroupAdmin(conversationId, memberId, isAdmin, actorId) {
+      return database.write(async () => {
+        await requireAdmin(conversationId, actorId);
+        if (!(await isParticipant(conversationId, memberId)) || memberId === SYSTEM_AUTHOR)
+          throw new Error("no_such_colleague");
+        const admins = await adminsIn(conversationId);
+        if (!isAdmin && !admins.some((id) => id !== memberId && id !== SYSTEM_AUTHOR)) throw new Error("last_admin");
+        await db
+          .update(participants)
+          .set({ isAdmin })
+          .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, memberId)));
+        return adminsIn(conversationId);
+      });
+    },
+
+    deleteMessage(messageId, actorId) {
+      return database.write(async () => {
+        const row = await byId(messageId);
+        if (!row) throw new Error("no_such_message");
+        if (!(await isParticipant(row.conversationId, actorId))) throw new Error("not_a_participant");
+        if (row.authorId !== actorId) {
+          const conversation = await conversationById(row.conversationId);
+          if (conversation?.kind !== "group" || !(await adminsIn(row.conversationId)).includes(actorId))
+            throw new Error("cannot_delete_message");
+        }
+        if (row.deletedAt !== null) return withFiles(row);
+        const files = await db
+          .select({ id: attachments.id })
+          .from(attachments)
+          .where(eq(attachments.messageId, messageId));
+        for (const file of files) await db.delete(attachmentChunks).where(eq(attachmentChunks.attachmentId, file.id));
+        await db.delete(attachments).where(eq(attachments.messageId, messageId));
+        await db
+          .update(messages)
+          .set({ text: "", deletedAt: new Date().toISOString(), deletedBy: actorId })
+          .where(eq(messages.id, messageId));
+        const deleted = await byId(messageId);
+        if (!deleted) throw new Error("chat_failed");
+        return withFiles(deleted);
       });
     },
 
@@ -299,8 +472,14 @@ export function openStore(folder: string | undefined): Store {
         .where(eq(participants.userId, userId));
 
       const views: ConversationView[] = [];
-      for (const { conversations: row } of rows) {
-        views.push({ ...(await summaryOf(row)), unread: await unreadOf(row.id, userId) });
+      for (const { conversations: row, participants: person } of rows) {
+        const lastMessage = await lastMessageOf(row.id, person.clearedThrough);
+        if (person.hidden && lastMessage === undefined) continue;
+        views.push({
+          ...(await summaryOf(row)),
+          lastMessage: lastMessage ? await withReceipts(lastMessage, userId) : undefined,
+          unread: await unreadOf(row.id, userId),
+        });
       }
       return views.sort((a, b) => (b.lastMessage?.seq ?? 0) - (a.lastMessage?.seq ?? 0));
     },
@@ -312,6 +491,41 @@ export function openStore(folder: string | undefined): Store {
     },
 
     participantsOf: participantsIn,
+
+    deleteConversation(conversationId, userId) {
+      return database.write(async () => {
+        if (!(await isParticipant(conversationId, userId))) throw new Error("not_a_participant");
+        const last = await lastMessageOf(conversationId);
+        const through = last?.seq ?? 0;
+        await db
+          .update(participants)
+          .set({
+            hidden: true,
+            clearedThrough: through,
+            readThrough: sql`max(${participants.readThrough}, ${through})`,
+          })
+          .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, userId)));
+      });
+    },
+
+    leaveGroup(conversationId, userId) {
+      return database.write(async () => {
+        await groupById(conversationId);
+        if (!(await isParticipant(conversationId, userId))) throw new Error("not_a_participant");
+        const others = (await participantsIn(conversationId)).filter((id) => id !== userId && id !== SYSTEM_AUTHOR);
+        const admins = await adminsIn(conversationId);
+        if (others.length > 0 && !admins.some((id) => others.includes(id))) {
+          await db
+            .update(participants)
+            .set({ isAdmin: true })
+            .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, others[0] ?? "")));
+        }
+        await db
+          .delete(participants)
+          .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, userId)));
+        return participantsIn(conversationId);
+      });
+    },
 
     async conversationOfMessage(messageId) {
       return (await byId(messageId))?.conversationId;
@@ -336,6 +550,7 @@ export function openStore(folder: string | undefined): Store {
         await media.ready(attachmentIds);
         await db.insert(messages).values({ id, conversationId, authorId, text: body, at: new Date().toISOString() });
         await media.bind(attachmentIds, id);
+        await recordRecipients(conversationId, id, authorId);
 
         const stored = await byId(id);
         if (stored === undefined) throw new Error("chat_failed");
@@ -362,6 +577,7 @@ export function openStore(folder: string | undefined): Store {
           text: body,
           at: new Date().toISOString(),
         });
+        await recordRecipients(conversationId, id, SYSTEM_AUTHOR);
         const stored = await byId(id);
         if (stored === undefined) throw new Error("chat_failed");
         return withFiles(stored);
@@ -371,13 +587,23 @@ export function openStore(folder: string | undefined): Store {
     async messagesOf(conversationId, options) {
       const limit = Math.min(Math.max(options?.limit ?? 50, 1), 200);
       const before = options?.before;
+      const [person] =
+        options?.userId === undefined
+          ? []
+          : await db
+              .select()
+              .from(participants)
+              .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, options.userId)));
+      if (options?.userId !== undefined && !person) throw new Error("not_a_participant");
       const rows = await db
         .select()
         .from(messages)
         .where(
-          before === undefined
-            ? eq(messages.conversationId, conversationId)
-            : and(eq(messages.conversationId, conversationId), lt(messages.seq, before)),
+          and(
+            eq(messages.conversationId, conversationId),
+            gt(messages.seq, person?.clearedThrough ?? 0),
+            before === undefined ? undefined : lt(messages.seq, before),
+          ),
         )
         // Newest first so the limit takes the newest page; handed back oldest-first below, which is
         // the order a conversation is read in.
@@ -385,18 +611,12 @@ export function openStore(folder: string | undefined): Store {
         .limit(limit);
 
       const page: Message[] = [];
-      for (const row of rows.reverse()) page.push(await withFiles(row));
+      for (const row of rows.reverse()) page.push(await withReceipts(await withFiles(row), options?.userId));
       return page;
     },
 
-    async markRead(conversationId, userId, through) {
-      // `max` so that reading an older message never un-reads a newer one: with two tabs open, the
-      // one showing yesterday would otherwise push the badge back up.
-      await db
-        .update(participants)
-        .set({ readThrough: sql`max(${participants.readThrough}, ${through})` })
-        .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, userId)));
-    },
+    markRead: (conversationId, userId, through) => acknowledge(conversationId, userId, through, true),
+    markDelivered: (conversationId, userId, through) => acknowledge(conversationId, userId, through, false),
 
     async unreadFor(userId) {
       const [row] = await db
@@ -408,6 +628,7 @@ export function openStore(folder: string | undefined): Store {
             eq(participants.userId, userId),
             sql`${messages.seq} > ${participants.readThrough}`,
             ne(messages.authorId, userId),
+            isNull(messages.deletedAt),
           ),
         );
       return row?.n ?? 0;
@@ -420,6 +641,7 @@ export function openStore(folder: string | undefined): Store {
       return {
         conversations: (await db.select().from(conversations)).map(conversationOf),
         participants: await db.select().from(participants),
+        receipts: await db.select().from(messageReceipts),
         messages: all,
         ...(await media.export()),
       };

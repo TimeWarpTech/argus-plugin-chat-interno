@@ -5,7 +5,7 @@
  * So the migrations ship with the plugin and run when a company's database is opened — and these
  * tests are the ones that fail the day that stops being true.
  */
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -123,6 +123,34 @@ describe("a database that already had the tables", () => {
 });
 
 describe("a database from an older version", () => {
+  it("preserves old messages and assigns administrators to existing groups", async () => {
+    const raw = new DatabaseSync(join(folder, "chat-interno.db"));
+    const initial = readFileSync(
+      fileURLToPath(new URL("../drizzle/0000_gifted_peter_parker.sql", import.meta.url)),
+      "utf8",
+    );
+    for (const statement of initial.split("--> statement-breakpoint")) if (statement.trim()) raw.exec(statement);
+    raw.exec(
+      "INSERT INTO conversations (id,kind,name,created_by,created_at) VALUES ('g-1','group','Equipe','ana','2026-01-01'),('g-2','group','Plantao','system','2026-01-01')",
+    );
+    raw.exec(
+      "INSERT INTO participants (conversation_id,user_id) VALUES ('g-1','ana'),('g-1','bruno'),('g-2','system'),('g-2','carla')",
+    );
+    raw.exec(
+      "INSERT INTO messages (id,conversation_id,author_id,text,at) VALUES ('m-1','g-1','bruno','Historico','2026-01-01')",
+    );
+    raw.close();
+    const migrated = openStore(folder);
+    try {
+      expect((await migrated.conversationsOf("ana"))[0]?.admins).toEqual(["ana"]);
+      expect((await migrated.conversationsOf("carla"))[0]?.admins).toContain("carla");
+      expect((await migrated.messagesOf("g-1"))[0]?.text).toBe("Historico");
+      await migrated.setGroupAdmin("g-1", "bruno", true, "ana");
+    } finally {
+      migrated.close();
+    }
+  });
+
   it("is brought up to date instead of being refused", async () => {
     // A database that only ever saw the first migration -- which is what any installation looks
     // like the moment a new one is added.
