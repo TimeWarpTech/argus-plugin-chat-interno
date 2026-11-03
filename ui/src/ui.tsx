@@ -31,6 +31,7 @@ import { useChat } from "./use-chat";
 import { type Words, wordsFor } from "./words";
 
 export const css = styles;
+export { ChatInternoNavigation } from "./navigation";
 
 export function ChatInternoPage({
   call,

@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_TEXT } from "../../shared/limits.js";
 import type { Conversation, Message } from "../../ui/src/model";
+import { ChatInternoNavigation } from "../../ui/src/navigation";
 import { ChatInternoPage } from "../../ui/src/ui";
 
 let root: Root;
@@ -66,6 +67,26 @@ afterEach(async () => {
 });
 
 describe("rendering live chat", () => {
+  it("renders the JSX navigation icon and navigates to the chat with the active route marked", async () => {
+    const navigate = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ChatInternoNavigation, { navigate, pathname: "/app/plugins/chat-interno", locale: "pt-BR" }),
+      ),
+    );
+    const link = container.querySelector<HTMLAnchorElement>("a");
+    expect(link?.getAttribute("href")).toBe("/app/plugins/chat-interno");
+    expect(link?.getAttribute("aria-current")).toBe("page");
+    expect(link?.querySelectorAll("svg path")).toHaveLength(2);
+    await act(async () => link?.click());
+    expect(navigate).toHaveBeenCalledWith("plugins/chat-interno");
+    await act(async () =>
+      root.render(createElement(ChatInternoNavigation, { navigate, pathname: "/app/plugins", locale: "en" })),
+    );
+    expect(container.querySelector("a")?.textContent).toBe("Internal chat");
+    expect(container.querySelector("a")?.hasAttribute("aria-current")).toBe(false);
+  });
+
   it("blocks extra characters with a modal, truncates only the pasted excess and sends at the exact limit", async () => {
     const call: PluginCall = vi.fn(async (_contract, name) => {
       switch (name) {

@@ -15,11 +15,14 @@ import { createAutomationProvider } from "@creativepetabyte/argus-automation-nod
 import {
   definePlugin,
   emitOwnEvents,
+  NAV_RAIL,
   type PluginContext,
   readMembers,
   type ServedCall,
   screens,
+  shellNavigation,
 } from "@creativepetabyte/argus-sdk";
+import { CHAT_PAGE_PATH } from "../shared/navigation.js";
 import { AUTOMATION_NODES, automationActions } from "./automation.js";
 import { automationTriggers } from "./automation-triggers.js";
 import {
@@ -52,7 +55,7 @@ export {
   PLUGIN_ID,
 } from "./events.js";
 
-const SCREEN_PATH = "chat-interno";
+const SCREEN_PATH = CHAT_PAGE_PATH;
 
 /**
  * The address the operator approved, and the one the browser downloads from.
@@ -137,10 +140,10 @@ const plugin = definePlugin({
           path: SCREEN_PATH,
           title: { "pt-BR": "Chat interno", en: "Internal chat" },
           component: PAGE_COMPONENT,
-          rail: { icon: "message-circle" },
         },
       ],
     }),
+    slots: [shellNavigation("chat.internal.navigation", NAV_RAIL, "ChatInternoNavigation")],
   },
 
   create(ctx: PluginContext) {

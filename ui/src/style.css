@@ -1594,3 +1594,56 @@
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* The plugin's JSX contribution to the shell navigation. */
+.ci-navigation {
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 0.75rem;
+  color: var(--color-text, #20232b);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+.ci-navigation:hover {
+  background: color-mix(in srgb, currentcolor 5%, transparent);
+}
+.ci-navigation-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  color: color-mix(in srgb, var(--color-text, #20232b) 65%, var(--color-panel, #fff));
+}
+.ci-navigation-icon svg {
+  display: block;
+}
+.ci-navigation.is-active .ci-navigation-icon {
+  background: color-mix(in srgb, var(--color-text, #20232b) 5%, var(--color-panel, #fff));
+  color: var(--color-accent, #008a6c);
+  box-shadow: 0 1px 2px #0001;
+}
+.ci-navigation-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ci-navigation:focus-visible {
+  outline: 2px solid var(--color-accent, #008a6c);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ci-navigation {
+    transition: none;
+  }
+}
