@@ -7,7 +7,9 @@ export async function uploadAttachment(
   call: MediaCall,
   file: { name: string; mimeType: string; bytes: Uint8Array },
   onProgress?: (percent: number) => void,
+  signal?: AbortSignal,
 ): Promise<Attachment> {
+  signal?.throwIfAborted();
   if (file.bytes.length === 0 || file.bytes.length > MAX_MEDIA_BYTES) throw new Error("media_size_limit");
   const answer = await call("CreateAttachment", {
     name: file.name,
@@ -29,6 +31,7 @@ export async function uploadAttachment(
   let reported = -1;
   try {
     for (let offset = 0; offset < file.bytes.length; offset += MEDIA_CHUNK_BYTES) {
+      signal?.throwIfAborted();
       const end = Math.min(offset + MEDIA_CHUNK_BYTES, file.bytes.length);
       const result = await call("WriteAttachment", {
         attachmentId: attachment.id,
@@ -43,6 +46,7 @@ export async function uploadAttachment(
         onProgress?.(percent);
       }
     }
+    signal?.throwIfAborted();
     return attachment;
   } catch (error) {
     await call("DeleteAttachment", { attachmentId: attachment.id }).catch(() => {});

@@ -14,6 +14,7 @@ import type { Words } from "./words";
 export interface Viewing {
   url: string;
   name: string;
+  kind?: "pdf";
 }
 
 export function Viewer({ viewing, words, onClose }: { viewing: Viewing; words: Words; onClose(): void }) {
@@ -45,14 +46,17 @@ export function Viewer({ viewing, words, onClose }: { viewing: Viewing; words: W
       </div>
       {/* Stops the click from reaching the backdrop: clicking the picture itself should not close
           what somebody opened to look at. */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: this handler only stops the backdrop from
-          closing; it triggers nothing, so there is no action for a key to mirror. */}
-      <img
-        className="ci-viewer-image"
-        src={viewing.url}
-        alt={viewing.name}
-        onClick={(event) => event.stopPropagation()}
-      />
+      {viewing.kind === "pdf" ? (
+        <iframe className="ci-viewer-pdf" src={viewing.url} title={viewing.name} />
+      ) : (
+        // biome-ignore lint/a11y/useKeyWithClickEvents: only prevents the backdrop from closing.
+        <img
+          className="ci-viewer-image"
+          src={viewing.url}
+          alt={viewing.name}
+          onClick={(event) => event.stopPropagation()}
+        />
+      )}
     </div>
   );
 }
