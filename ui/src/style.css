@@ -556,7 +556,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  margin-bottom: 0.25rem;
+  min-width: 0;
+  margin-bottom: 0;
 }
 
 /*
@@ -648,25 +649,26 @@
   background: none;
   cursor: zoom-in;
   width: fit-content;
-  max-width: min(100%, 20rem);
-  border-radius: 0.375rem;
+  max-width: 100%;
+  border-radius: 0.5rem;
   overflow: hidden;
   line-height: 0;
 }
 
 .ci-shot img,
-.ci-shot video {
+.ci-video {
   display: block;
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: 20rem;
+  max-height: 26rem;
   object-fit: contain;
 }
 
-.ci-audio {
-  width: min(100%, 17rem);
-  height: 2.25rem;
+.ci-video {
+  width: 100%;
+  background: #111b21;
+  cursor: default;
 }
 
 /* Anything that is not shown inline: named, measured, and fetched only when asked for. */
@@ -674,15 +676,18 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.375rem 0.5rem;
-  border-radius: 0.375rem;
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  min-width: 0;
+  padding: 0.875rem 0.75rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
 }
 
 .ci-file-text {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
+  gap: 0.25rem;
 }
 
 .ci-file-name {
@@ -1708,4 +1713,782 @@
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
+}
+/* Media shares the bubble's edge; actions overlay it instead of taking a side column. */
+.ci-bubble.has-media {
+  box-sizing: border-box;
+  width: 21rem;
+  max-width: min(100%, 24rem);
+  padding: 0.1875rem;
+  border-radius: 0.625rem;
+}
+.ci-bubble.has-media > .ci-text {
+  display: block;
+  padding: 0.375rem 0.5rem 0.125rem;
+}
+.ci-bubble.has-media > .ci-quote {
+  box-sizing: border-box;
+  width: calc(100% - 0.375rem);
+  margin: 0.1875rem;
+}
+.ci-bubble.has-media > .ci-at {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.125rem;
+  float: none;
+  margin: 0.125rem 0.375rem 0.25rem;
+}
+.ci-bubble.is-photo-only:has(.ci-shot) > .ci-at {
+  position: absolute;
+  right: 0.375rem;
+  bottom: 0.375rem;
+  margin: 0;
+  padding: 0.5rem 0.375rem 0.25rem 1.25rem;
+  border-radius: 0.375rem;
+  background: linear-gradient(135deg, transparent, #0008);
+  color: #fff;
+  pointer-events: none;
+  text-shadow: 0 1px 2px #0005;
+}
+.ci-bubble.is-photo-only:has(.ci-shot) > .ci-at .ci-receipt:not(.is-read) {
+  color: #fff;
+}
+.ci-bubble.has-media > .ci-message-actions {
+  z-index: 2;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: color-mix(in srgb, var(--bar) 88%, transparent);
+  box-shadow: 0 1px 4px #0002;
+}
+.ci-message-actions > .ci-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ci-bubble.has-media > .ci-message-actions {
+    opacity: 0;
+  }
+  .ci-bubble.has-media:hover > .ci-message-actions,
+  .ci-bubble.has-media:focus-within > .ci-message-actions {
+    opacity: 1;
+  }
+}
+.ci-media-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  width: 100%;
+  min-height: 12rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--ink) 12%, var(--bar));
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.ci-media-placeholder:disabled {
+  cursor: progress;
+}
+.ci-media-load {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border: 1px solid #fff6;
+  border-radius: 50%;
+  background: #111b2170;
+  color: white;
+}
+.ci-media-load svg,
+.ci-file-download svg,
+.ci-document-icon svg,
+.ci-voice svg {
+  display: block;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.ci-media-size {
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+.ci-document-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 3rem;
+  border-radius: 0.375rem;
+  background: #5386c719;
+  color: #5386c7;
+}
+.ci-document-icon.is-pdf {
+  background: #e5686819;
+  color: #d85e5e;
+}
+.ci-file-download,
+.ci-voice-play,
+.ci-voice-speed {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  cursor: pointer;
+}
+.ci-file-download {
+  border: 1px solid color-mix(in srgb, var(--faint) 45%, transparent);
+}
+.ci-file-download:disabled,
+.ci-voice-play:disabled {
+  cursor: progress;
+}
+.ci-file-download .ci-spinner,
+.ci-voice-play .ci-spinner {
+  border-color: var(--line);
+  border-top-color: var(--accent);
+}
+.ci-pdf {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--ink) 5%, var(--bar));
+}
+.ci-pdf-preview {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 17rem;
+  border: 0;
+  background: #f4f4f4;
+}
+.ci-pdf-open {
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ci-pdf-open:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.ci-pdf-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ci-pdf-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  min-height: 10rem;
+  color: var(--faint);
+  font-size: 0.8125rem;
+}
+.ci-pdf-loading .ci-spinner {
+  border-color: var(--line);
+  border-top-color: var(--accent);
+}
+.ci-viewer-pdf {
+  width: min(100%, 70rem);
+  height: 100%;
+  min-height: 0;
+  place-self: center;
+  border: 0;
+  border-radius: 0.5rem;
+  background: #fff;
+  cursor: auto;
+}
+.ci-viewer:has(.ci-viewer-pdf) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* Shared controls stay inside the shadow root and follow both themes. */
+.ci-player {
+  --player-accent: var(--accent);
+  --player-muted: var(--faint);
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 0.5rem;
+}
+.ci-player svg,
+.ci-microphone svg,
+.ci-recording-finish svg {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: none;
+}
+.ci-player-audio {
+  padding: 0.75rem 0.875rem 0.5rem;
+  background: linear-gradient(125deg, color-mix(in srgb, var(--brand) 9%, transparent), transparent 75%);
+}
+.ci-player audio {
+  display: none;
+}
+.ci-player-audio-top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.6875rem;
+}
+.ci-player-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+  color: var(--accent);
+  font-weight: 650;
+}
+.ci-player-type svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.ci-player-filename {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ci-player-audio-main {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+.ci-player-play,
+.ci-player-button,
+.ci-player-speed,
+.ci-player-center {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ci-player-audio .ci-player-play {
+  width: 2.875rem;
+  height: 2.875rem;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--accent) 23%, transparent);
+}
+.ci-player-audio :where(.ci-player-play) svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+.ci-player-audio-track {
+  flex: 1;
+  min-width: 0;
+}
+.ci-player-timeline {
+  position: relative;
+  display: block;
+  height: 1.75rem;
+}
+.ci-player-seek {
+  appearance: none;
+  -webkit-appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.ci-player-seek::-webkit-slider-runnable-track {
+  height: 0.1875rem;
+  border-radius: 1rem;
+  background: linear-gradient(
+    to right,
+    var(--player-accent) var(--progress),
+    color-mix(in srgb, var(--player-muted) 26%, transparent) var(--progress)
+  );
+}
+.ci-player-seek::-moz-range-track {
+  height: 0.1875rem;
+  border-radius: 1rem;
+  background: linear-gradient(
+    to right,
+    var(--player-accent) var(--progress),
+    color-mix(in srgb, var(--player-muted) 26%, transparent) var(--progress)
+  );
+}
+.ci-player-seek::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-top: -0.21875rem;
+  border: 0;
+  border-radius: 50%;
+  background: var(--player-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--player-accent) 10%, transparent);
+}
+.ci-player-seek::-moz-range-thumb {
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 0;
+  border-radius: 50%;
+  background: var(--player-accent);
+}
+.ci-player-seek:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.ci-player .ci-player-waveform {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ci-player-waveform rect {
+  fill: color-mix(in srgb, var(--player-muted) 30%, transparent);
+}
+.ci-player-waveform rect.is-played {
+  fill: var(--player-accent);
+}
+.has-waveform .ci-player-seek::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.has-waveform .ci-player-seek::-moz-range-track {
+  background: transparent;
+}
+.ci-player-times {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--faint);
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+}
+.ci-player-time-divider {
+  opacity: 0.5;
+}
+.ci-player-audio-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+  min-height: 1.75rem;
+}
+.ci-player-status {
+  flex: 1;
+  min-width: 0;
+  color: var(--faint);
+  font-size: 0.625rem;
+}
+.ci-player-speed {
+  width: 2.125rem;
+  height: 1.375rem;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: inherit;
+  font-size: 0.6875rem;
+  font-weight: 650;
+}
+.ci-player-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  background: transparent;
+  color: var(--faint);
+}
+.ci-player-play:hover,
+.ci-player-center:hover {
+  filter: brightness(1.1);
+}
+.ci-player-button:hover,
+.ci-player-speed:hover {
+  background: color-mix(in srgb, currentcolor 12%, transparent);
+}
+.ci-player button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.ci-player .ci-spinner {
+  width: 1rem;
+  height: 1rem;
+}
+.ci-player-video {
+  --player-accent: #fff;
+  --player-muted: #fff;
+  position: relative;
+  aspect-ratio: 16 / 10;
+  min-height: 11rem;
+  background: #101e25;
+  color: #fff;
+}
+.ci-player-video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.ci-player-video-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 1rem;
+  background:
+    radial-gradient(ellipse at 20% 10%, #35645c66, transparent 75%), linear-gradient(145deg, #213940, #101e25);
+}
+.ci-player-video-empty > svg {
+  opacity: 0.6;
+}
+.ci-player-video-name,
+.ci-player-video-size {
+  max-width: 85%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  color: #fffb;
+}
+.ci-player-video-size {
+  font-size: 0.625rem;
+  color: #fff7;
+}
+.ci-player-center-wrap {
+  position: absolute;
+  inset: 0 0 3.75rem;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.ci-player-center {
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 1px solid #fff6;
+  background: #101e2580;
+  color: #fff;
+  box-shadow: 0 4px 24px #0003;
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+.ci-player-center svg {
+  width: 1.625rem;
+  height: 1.625rem;
+}
+.ci-player-video-controls {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 1.5rem 0.625rem 0.375rem;
+  background: linear-gradient(transparent, #000b 40%);
+}
+.ci-player-video-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+.ci-player-video .ci-player-play {
+  width: 1.75rem;
+  height: 1.75rem;
+  background: transparent;
+  color: #fff;
+}
+.ci-player-video .ci-player-button {
+  color: #fff;
+}
+.ci-player-video .ci-player-speed {
+  background: #fff2;
+}
+.ci-player-video-time {
+  font-size: 0.625rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ci-player-total {
+  color: #fff8;
+}
+.ci-player-controls-spacer {
+  flex: 1;
+}
+.ci-player-video .ci-player-timeline {
+  height: 1rem;
+}
+.ci-player-video-status {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  right: 2.5rem;
+  color: #fffc;
+  font-size: 0.6875rem;
+}
+.ci-player-video:fullscreen {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  aspect-ratio: auto;
+}
+.ci-player-video:fullscreen .ci-player-video-controls {
+  padding: 3rem 1.5rem 1rem;
+}
+.ci-player-video:fullscreen .ci-player-video-time {
+  font-size: 0.875rem;
+}
+.ci-player button:focus-visible,
+.ci-player a:focus-visible,
+.ci-player input:focus-visible,
+.ci-microphone:focus-visible,
+.ci-recording-finish:focus-visible,
+.ci-pending-actions button:focus-visible,
+.ci-file-download:focus-visible,
+.ci-shot:focus-visible {
+  outline: 2px solid var(--player-accent, var(--accent));
+  outline-offset: 2px;
+}
+.ci-file-download:hover {
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+/* Outgoing files remain messages while the bounded transfer runs. */
+.ci-pending-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 6.5rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bar));
+}
+.ci-pending-preview.has-preview {
+  height: 12rem;
+  background: #15252c;
+}
+.ci-pending-preview img,
+.ci-pending-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+.ci-pending-file-icon {
+  position: absolute;
+  left: 1.25rem;
+  color: var(--accent);
+  opacity: 0.5;
+}
+.ci-pending-file-icon svg {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+.ci-pending-indicator {
+  position: absolute;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.125rem;
+  width: 3.5rem;
+  height: 3.5rem;
+  line-height: 3.5rem;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bar) 90%, transparent);
+  color: var(--accent);
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.ci-pending-indicator small {
+  font-size: 0.6875rem;
+}
+.ci-pending-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.75rem 0.875rem 0.375rem;
+}
+.ci-pending-body > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+.ci-pending-size,
+.ci-pending-status {
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+.ci-upload-progress {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 0.25rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.ci-upload-progress::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 1rem;
+}
+.ci-upload-progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 1rem;
+}
+.ci-upload-progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: 1rem;
+}
+.ci-pending-clock {
+  margin-left: 0.25rem;
+  font-size: 0.9375rem;
+}
+.ci-pending.is-failed .ci-pending-indicator {
+  color: #cc5555;
+  border-color: #cc555560;
+}
+.ci-pending.is-failed .ci-pending-status {
+  color: #cc5555;
+}
+.ci-pending-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.ci-pending-actions button {
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+/* Microphone capture and local playback before sending. */
+.ci-microphone {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+}
+.ci-microphone:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.ci-microphone:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ci-recording-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.ci-recording-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #e15a5a;
+  box-shadow: 0 0 0 4px #e15a5a16;
+}
+.ci-recording-label {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--faint);
+}
+.ci-recording-waveform {
+  display: block;
+  flex: 1;
+  min-width: 3rem;
+  width: 12rem;
+  max-width: 28rem;
+  height: 2.25rem;
+  color: var(--accent);
+  fill: currentcolor;
+}
+.ci-recording-bar time {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.ci-recording-bar .ci-plain {
+  font-size: 0.75rem;
+}
+.ci-recording-finish {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 1rem;
+  background: var(--accent);
+  color: white;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.ci-recording-finish:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ci-recording-finish svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.ci-audio-draft {
+  box-sizing: border-box;
+  width: min(100%, 24rem);
+  padding: 0.5rem 1rem 0;
+}
+@media (max-width: 32rem) {
+  .ci-recording-bar {
+    flex-wrap: wrap;
+  }
+  .ci-recording-label {
+    flex: 1;
+    min-width: 7rem;
+  }
+  .ci-recording-waveform {
+    order: 1;
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .ci-player-video-toolbar {
+    gap: 0;
+  }
+  .ci-player-video .ci-player-button {
+    width: 1.5rem;
+  }
 }

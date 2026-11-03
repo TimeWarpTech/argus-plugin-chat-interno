@@ -67,6 +67,80 @@ afterEach(async () => {
 });
 
 describe("rendering live chat", () => {
+  it("shows a temporary upload bubble, preserves its conversation and replaces it after confirmation", async () => {
+    let releaseChunk: (() => void) | undefined;
+    let releaseSend: (() => void) | undefined;
+    const history: Message[] = [];
+    const other: Conversation = { ...conversation, id: "other-group", name: "Outra conversa" };
+    const file = new File([new Uint8Array(96 * 1024)], "arquivo.txt", { type: "text/plain" });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => new ArrayBuffer(file.size) });
+    const attachment = { id: "a-upload", name: file.name, mimeType: file.type, size: file.size };
+    const call: PluginCall = vi.fn(async (_contract, method, input) => {
+      const data = input as Record<string, unknown>;
+      switch (method) {
+        case "Conversations":
+          return { conversations: [conversation, other] };
+        case "Colleagues":
+          return { colleagues: [] };
+        case "Typing":
+          return { now: Date.now(), typing: [] };
+        case "Messages":
+          return { messages: data.conversationId === conversation.id ? history : [] };
+        case "CreateAttachment":
+          return attachment;
+        case "WriteAttachment":
+          if (data.offset === 48 * 1024)
+            await new Promise<void>((resolve) => {
+              releaseChunk = resolve;
+            });
+          return {};
+        case "Send": {
+          expect(data.conversationId).toBe(conversation.id);
+          await new Promise<void>((resolve) => {
+            releaseSend = resolve;
+          });
+          const message: Message = {
+            id: "sent-upload",
+            seq: 1,
+            conversationId: conversation.id,
+            authorId: "bruno",
+            text: "",
+            at: new Date().toISOString(),
+            attachments: [attachment],
+          };
+          history.push(message);
+          return { message };
+        }
+        default:
+          return {};
+      }
+    });
+    await act(async () => root.render(createElement(ChatInternoPage, { call, me: "bruno", locale: "pt-BR" })));
+    await act(async () => container.querySelector<HTMLButtonElement>(".ci-entry")?.click());
+    const picker = container.querySelector<HTMLInputElement>(".ci-picker");
+    if (!picker) throw new Error("File picker missing");
+    Object.defineProperty(picker, "files", { configurable: true, value: [file] });
+    await act(async () => picker.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(vi.mocked(call).mock.calls.some((args) => args[1] === "CreateAttachment")).toBe(false);
+    await act(async () =>
+      container.querySelector(".ci-compose")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(container.querySelector<HTMLProgressElement>(".ci-upload-progress")?.value).toBe(50);
+    expect(container.querySelector(".ci-pending")?.textContent).toContain("arquivo.txt");
+    const entries = [...container.querySelectorAll<HTMLButtonElement>(".ci-rail .ci-entry")];
+    await act(async () => entries[1]?.click());
+    expect(container.querySelector(".ci-pending")).toBeNull();
+    await act(async () => releaseChunk?.());
+    await act(async () => container.querySelector<HTMLButtonElement>(".ci-rail .ci-entry")?.click());
+    expect(container.querySelector<HTMLProgressElement>(".ci-upload-progress")?.value).toBe(100);
+    expect(container.querySelector(".ci-pending-status")?.textContent).toContain("Confirmando");
+    await act(async () => releaseSend?.());
+    expect(container.querySelector(".ci-pending")).toBeNull();
+    expect(container.querySelectorAll(".ci-file-name")).toHaveLength(1);
+    expect(container.querySelector(".ci-file-name")?.textContent).toBe("arquivo.txt");
+    expect(container.querySelector('[aria-label="Gravar áudio"]')).not.toBeNull();
+  });
+
   it("replies through the message menu, preserves the draft on cancel and displays the saved quote", async () => {
     const history = structuredClone(messages);
     const call: PluginCall = vi.fn(async (_contract, name, input) => {

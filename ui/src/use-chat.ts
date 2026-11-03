@@ -40,7 +40,7 @@ export interface Chat {
   ): Promise<boolean>;
   revealHistory(messages: Message[]): void;
   deleteMessage(messageId: string): Promise<boolean>;
-  send(text: string, attachmentIds?: readonly string[], replyToId?: string): Promise<boolean>;
+  send(text: string, attachmentIds?: readonly string[], replyToId?: string, conversationId?: string): Promise<boolean>;
   loadReply(messageId: string): Promise<boolean>;
 }
 
@@ -356,18 +356,24 @@ export function useChat({ call, stream, words }: Options): Chat {
       );
       return true;
     },
-    async send(text, attachmentIds = [], replyToId) {
+    async send(text, attachmentIds = [], replyToId, conversationId = openId) {
       // A file with no words is a message; nothing at all is not.
-      if (openId === undefined || (text.trim() === "" && attachmentIds.length === 0)) return false;
+      if (conversationId === undefined || (text.trim() === "" && attachmentIds.length === 0)) return false;
       const answer = await call?.(CHAT, "Send", {
-        conversationId: openId,
+        conversationId,
         text,
         attachmentIds: [...attachmentIds],
         ...(replyToId === undefined ? {} : { replyToId }),
       });
       if (!accepted(answer)) return false;
-      await loadMessages(openId);
-      await loadConversations();
+      const message = (answer as { message?: Message } | undefined)?.message;
+      if (message && currentConversation.current === conversationId) {
+        setMessages((current) =>
+          [...new Map([...current, message].map((item) => [item.id, item])).values()].sort((a, b) => a.seq - b.seq),
+        );
+      }
+      // A failed refresh after Send succeeded must never turn a confirmed message into a retry.
+      await Promise.allSettled([loadMessages(conversationId), loadConversations()]);
       return true;
     },
   };

@@ -6,7 +6,7 @@
  * `call` is the only door, and the kernel decides who the caller is, which is why nothing sent from
  * here carries an author.
  */
-import type { Attachment, MediaCall } from "@creativepetabyte/argus-chat-media";
+import type { MediaCall } from "@creativepetabyte/argus-chat-media";
 import type { DomNode, PluginHostProps } from "@creativepetabyte/argus-sdk/ui";
 import { type MouseEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { MAX_MEDIA_BYTES, MAX_TEXT } from "../../shared/limits.js";
@@ -14,6 +14,7 @@ import { Attachments, sizeOf } from "./attachments";
 import { Avatar, ConfirmDialog, Icon, InfoDialog, ReceiptMark } from "./components";
 import { fitMessageInsertion } from "./composer-model";
 import { ContextMenu, type MenuAction, type MenuPosition } from "./context-menu";
+import { MediaIcon } from "./media-icons";
 import {
   CHAT,
   type Colleague,
@@ -28,9 +29,10 @@ import {
   SLOTS,
 } from "./model";
 import { ConversationPanel, NewChat, type PanelView } from "./panels";
+import { type PendingUpload, PendingUploadBubble, usePendingUploads } from "./pending-uploads";
 import styles from "./style.css?inline";
-import { uploadAttachment } from "./upload";
 import { useChat } from "./use-chat";
+import { LocalAudioPreview, RecordingBar, useVoiceRecorder } from "./voice-recorder";
 import { type Words, wordsFor } from "./words";
 
 export const css = styles;
@@ -90,6 +92,8 @@ export function ChatInternoPage({
       call === undefined ? undefined : (method: string, input: Record<string, unknown>) => call(CHAT, method, input),
     [call],
   );
+
+  const pending = usePendingUploads(mediaCall, chat.send);
 
   const time = useMemo(() => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }), [locale]);
   const number = useMemo(() => new Intl.NumberFormat(locale), [locale]);
@@ -382,6 +386,15 @@ export function ChatInternoPage({
                   setFocusRevision((value) => value + 1);
                 }
               }}
+              uploads={pending.uploads.filter(
+                (upload) =>
+                  upload.conversationId === open.id &&
+                  !chat.messages.some((message) =>
+                    message.attachments.some((attachment) => attachment.id === upload.attachment?.id),
+                  ),
+              )}
+              onRetryUpload={pending.retry}
+              onDiscardUpload={pending.discard}
               days={days}
               focusMessage={focusMessage}
               me={me}
@@ -396,6 +409,11 @@ export function ChatInternoPage({
 
             <Composer
               key={`composer:${open.id}`}
+              onSendFile={(file, text, replyToId) => {
+                const queued = pending.enqueue(open.id, file, text, replyToId);
+                if (queued) setReplyTarget(undefined);
+                return queued;
+              }}
               onTyping={chat.setTyping}
               replyTarget={replying}
               nameOf={nameOf}
@@ -565,6 +583,9 @@ function ConversationRow({
 }
 
 function Thread({
+  uploads,
+  onRetryUpload,
+  onDiscardUpload,
   onReply,
   onQuoteJump,
   focusRevision,
@@ -581,6 +602,9 @@ function Thread({
   words,
   locale,
 }: {
+  uploads: PendingUpload[];
+  onRetryUpload(id: string): void;
+  onDiscardUpload(id: string): void;
   days: Day[];
   focusRevision: number;
   onReply(message: Message): void;
@@ -638,9 +662,10 @@ function Thread({
    * reading further up.
    */
   const lastMessageId = days.at(-1)?.runs.at(-1)?.messages.at(-1)?.id;
+  const lastUploadId = uploads.at(-1)?.id;
   useEffect(() => {
-    if (lastMessageId !== undefined) bottom.current?.scrollIntoView({ block: "end" });
-  }, [lastMessageId]);
+    if (lastMessageId !== undefined || lastUploadId !== undefined) bottom.current?.scrollIntoView({ block: "end" });
+  }, [lastMessageId, lastUploadId]);
 
   const currentInfo = messageInfo
     ? (days
@@ -707,7 +732,7 @@ function Thread({
                 {run.messages.map((message) => (
                   <article
                     ref={message.id === focusMessage ? focused : undefined}
-                    className={`ci-bubble${message.id === arrived ? " is-new" : ""}${message.id === focusMessage ? " is-found" : ""}`}
+                    className={`ci-bubble${!message.deletedAt && message.attachments.length > 0 ? " has-media" : ""}${!message.deletedAt && message.text === "" && message.attachments.length === 1 && message.attachments[0]?.mimeType.startsWith("image/") ? " is-photo-only" : ""}${message.id === arrived ? " is-new" : ""}${message.id === focusMessage ? " is-found" : ""}`}
                     key={message.id}
                     aria-label={words.messageInfo}
                     onContextMenu={(event) => openMessageMenu(event, message, true)}
@@ -803,6 +828,17 @@ function Thread({
           ]}
         />
       )}
+      {uploads.map((upload) => (
+        <PendingUploadBubble
+          key={upload.id}
+          upload={upload}
+          words={words}
+          locale={locale}
+          time={time}
+          onRetry={onRetryUpload}
+          onDiscard={onDiscardUpload}
+        />
+      ))}
       <div ref={bottom} />
       <dialog
         ref={dialog}
@@ -849,6 +885,7 @@ function Thread({
 }
 
 function Composer({
+  onSendFile,
   replyTarget,
   onCancelReply,
   nameOf,
@@ -863,6 +900,7 @@ function Composer({
   locale: string;
   mediaCall: MediaCall | undefined;
   extra: ReactNode;
+  onSendFile(file: File, text: string, replyToId?: string): boolean;
   onSend(text: string, attachmentIds: readonly string[], replyToId?: string): Promise<boolean>;
   replyTarget: Message | undefined;
   onCancelReply(): void;
@@ -914,54 +952,20 @@ function Composer({
     setBlockedCharacters(fitted.blocked);
     return true;
   };
-  /** The file already uploaded, waiting for the message that will carry it. */
-  const [waiting, setWaiting] = useState<Attachment>();
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [waiting, setWaiting] = useState<File>();
   const [problem, setProblem] = useState<string>();
   const picker = useRef<HTMLInputElement>(null);
-
-  /**
-   * Uploads as soon as a file is chosen, before anybody presses send.
-   *
-   * The bytes go in 48 KiB pieces over the contract call, so by the time there is a message to send
-   * the file is already on the other side and the message only has to name it.
-   */
-  const take = async (file: File) => {
-    if (mediaCall === undefined) return;
+  const take = (file: File) => {
     setProblem(undefined);
-    if (file.size > MAX_MEDIA_BYTES) {
-      setProblem(words.tooBig);
+    if (file.size === 0 || file.size > MAX_MEDIA_BYTES) {
+      setProblem(file.size > MAX_MEDIA_BYTES ? words.tooBig : words.fileFailed);
       return;
     }
-    setUploading(true);
-    setUploadProgress(0);
-    try {
-      const attachment = await uploadAttachment(
-        mediaCall,
-        {
-          name: file.name,
-          mimeType: file.type,
-          bytes: new Uint8Array(await file.arrayBuffer()),
-        },
-        setUploadProgress,
-      );
-      setWaiting(attachment);
-    } catch (error) {
-      const code = error instanceof Error ? error.message : undefined;
-      setProblem(words.refusalFor(code) ?? words.fileFailed);
-    } finally {
-      setUploading(false);
-    }
+    setWaiting(file);
   };
-
-  const drop = async () => {
-    // Tell the other side to forget it, so a cancelled attachment leaves nothing behind.
-    if (waiting !== undefined && mediaCall !== undefined) {
-      await mediaCall("DeleteAttachment", { attachmentId: waiting.id }).catch(() => {});
-    }
-    setWaiting(undefined);
-  };
+  const drop = () => setWaiting(undefined);
+  const recorder = useVoiceRecorder(take, words);
+  const recording = recorder.status !== "idle";
 
   const nothingToSend = !hasText && waiting === undefined;
 
@@ -986,6 +990,15 @@ function Composer({
         </div>
       )}
       {problem !== undefined && <p className="ci-problem">{problem}</p>}
+      {recorder.problem && (
+        <p className="ci-problem" role="alert">
+          {recorder.problem}
+        </p>
+      )}
+      {recording && <RecordingBar recorder={recorder} words={words} />}
+      {waiting?.type.startsWith("audio/") && (
+        <LocalAudioPreview key={`${waiting.name}:${waiting.lastModified}`} file={waiting} words={words} />
+      )}
       {waiting !== undefined && (
         <p className="ci-waiting">
           <span>{words.attached.replace("{name}", waiting.name)}</span>
@@ -1002,7 +1015,7 @@ function Composer({
             setBlockedCharacters(draft.current.length - MAX_TEXT);
             return;
           }
-          if (nothingToSend || sending || uploading) return;
+          if (nothingToSend || sending || recording) return;
           stopTyping();
           const text = draft.current;
           const carried = waiting;
@@ -1014,7 +1027,7 @@ function Composer({
           setSending(true);
           let sent = false;
           try {
-            sent = await onSend(text, carried === undefined ? [] : [carried.id], replyTarget?.id);
+            sent = carried ? onSendFile(carried, text, replyTarget?.id) : await onSend(text, [], replyTarget?.id);
           } catch {
             setProblem(words.refusalFor("chat_failed"));
           } finally {
@@ -1049,10 +1062,10 @@ function Composer({
               className="ci-clip"
               title={words.attach}
               aria-label={words.attach}
-              disabled={uploading}
+              disabled={sending || recording}
               onClick={() => picker.current?.click()}
             >
-              {uploading ? "…" : "+"}
+              {"+"}
             </button>
           </>
         )}
@@ -1060,7 +1073,8 @@ function Composer({
         {extra !== undefined && extra !== null && <span className="ci-slot">{extra}</span>}
         <input
           className="ci-field"
-          placeholder={uploading ? `${words.uploading} ${uploadProgress}%` : words.write}
+          disabled={recording}
+          placeholder={words.write}
           ref={draftInput}
           defaultValue=""
           onBlur={stopTyping}
@@ -1108,10 +1122,25 @@ function Composer({
           }}
           aria-label={words.write}
         />
+        {mediaCall !== undefined && (
+          <button
+            type="button"
+            className="ci-microphone"
+            aria-label={words.recordAudio}
+            title={words.recordAudio}
+            disabled={sending || recording || waiting !== undefined}
+            onClick={() => {
+              stopTyping();
+              void recorder.start();
+            }}
+          >
+            <MediaIcon kind="mic" />
+          </button>
+        )}
         <button
           type="submit"
           className="ci-go"
-          disabled={nothingToSend || sending || uploading}
+          disabled={nothingToSend || sending || recording}
           aria-label={words.send}
         >
           {words.send}
