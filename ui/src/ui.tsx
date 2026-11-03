@@ -6,10 +6,10 @@
  * `call` is the only door, and the kernel decides who the caller is, which is why nothing sent from
  * here carries an author.
  */
-import { type Attachment, MAX_MEDIA_BYTES, type MediaCall, uploadMedia } from "@creativepetabyte/argus-chat-media";
+import type { Attachment, MediaCall } from "@creativepetabyte/argus-chat-media";
 import type { DomNode, PluginHostProps } from "@creativepetabyte/argus-sdk/ui";
 import { type MouseEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
-import { MAX_TEXT } from "../../shared/limits.js";
+import { MAX_MEDIA_BYTES, MAX_TEXT } from "../../shared/limits.js";
 import { Attachments, sizeOf } from "./attachments";
 import { Avatar, ConfirmDialog, Icon, InfoDialog, ReceiptMark } from "./components";
 import { fitMessageInsertion } from "./composer-model";
@@ -23,10 +23,13 @@ import {
   type Message,
   otherSideOf,
   previewOf,
+  quoteOf,
+  quotePreview,
   SLOTS,
 } from "./model";
 import { ConversationPanel, NewChat, type PanelView } from "./panels";
 import styles from "./style.css?inline";
+import { uploadAttachment } from "./upload";
 import { useChat } from "./use-chat";
 import { type Words, wordsFor } from "./words";
 
@@ -51,6 +54,11 @@ export function ChatInternoPage({
   }>();
   const [actionBusy, setActionBusy] = useState(false);
   const [actionProblem, setActionProblem] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<{ conversationId: string; message: Message }>();
+  const [focusRevision, setFocusRevision] = useState(0);
+  useEffect(() => {
+    setReplyTarget((current) => (current?.conversationId === chat.openId ? current : undefined));
+  }, [chat.openId]);
   const [query, setQuery] = useState("");
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [startingChat, setStartingChat] = useState(false);
@@ -93,6 +101,10 @@ export function ChatInternoPage({
       (filter !== "groups" || conversation.kind === "group"),
   );
   const open = chat.conversations.find((conversation) => conversation.id === chat.openId);
+  const replying =
+    replyTarget?.conversationId === open?.id
+      ? (chat.messages.find((message) => message.id === replyTarget?.message.id) ?? replyTarget?.message)
+      : undefined;
   const panelView = open?.id === panel?.id ? panel?.view : undefined;
   const typingNames = chat.typing
     .filter((person) => person.userId !== me && open?.participants.includes(person.userId))
@@ -349,6 +361,14 @@ export function ChatInternoPage({
               key={`thread:${open.id}`}
               canModerate={open.admins?.includes(me ?? "") ?? false}
               onDelete={chat.deleteMessage}
+              focusRevision={focusRevision}
+              onReply={(message) => setReplyTarget({ conversationId: open.id, message })}
+              onQuoteJump={async (id) => {
+                if (await chat.loadReply(id)) {
+                  setFocusMessage(id);
+                  setFocusRevision((value) => value + 1);
+                }
+              }}
               days={days}
               focusMessage={focusMessage}
               me={me}
@@ -364,11 +384,18 @@ export function ChatInternoPage({
             <Composer
               key={`composer:${open.id}`}
               onTyping={chat.setTyping}
+              replyTarget={replying}
+              nameOf={nameOf}
+              onCancelReply={() => setReplyTarget(undefined)}
               words={words}
               locale={locale}
               mediaCall={mediaCall}
               extra={renderSlot?.(SLOTS.composerActions)}
-              onSend={(text, attachmentIds) => chat.send(text, attachmentIds)}
+              onSend={async (text, attachmentIds, replyToId) => {
+                const sent = await chat.send(text, attachmentIds, replyToId);
+                if (sent) setReplyTarget((current) => (current?.message.id === replyToId ? undefined : current));
+                return sent;
+              }}
             />
           </>
         )}
@@ -525,6 +552,9 @@ function ConversationRow({
 }
 
 function Thread({
+  onReply,
+  onQuoteJump,
+  focusRevision,
   days,
   canModerate,
   onDelete,
@@ -539,6 +569,9 @@ function Thread({
   locale,
 }: {
   days: Day[];
+  focusRevision: number;
+  onReply(message: Message): void;
+  onQuoteJump(id: string): Promise<void>;
   canModerate: boolean;
   onDelete(messageId: string): Promise<boolean>;
   focusMessage: string | undefined;
@@ -578,9 +611,10 @@ function Thread({
   }, [deleting]);
   const bottom = useRef<HTMLDivElement>(null);
   const focused = useRef<HTMLElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: incrementing focusRevision scrolls to the same quote again.
   useEffect(() => {
     if (focusMessage) focused.current?.scrollIntoView({ block: "center" });
-  }, [focusMessage]);
+  }, [focusMessage, focusRevision]);
   /**
    * Jump to the end whenever the thread grows: a chat is read from the bottom.
    *
@@ -602,6 +636,9 @@ function Thread({
     : undefined;
   const messageActions: MenuAction[] = messageMenu
     ? [
+        ...(!messageMenu.message.deletedAt
+          ? [{ id: "reply", label: words.reply, icon: "reply" as const, run: () => onReply(messageMenu.message) }]
+          : []),
         { id: "info", label: words.messageInfo, icon: "info", run: () => setMessageInfo(messageMenu.message) },
         ...(!messageMenu.message.deletedAt && messageMenu.message.text
           ? [
@@ -671,6 +708,21 @@ function Thread({
                     >
                       <Icon name="more" />
                     </button>
+                    {message.replyTo && !message.deletedAt && (
+                      <button
+                        type="button"
+                        className="ci-quote"
+                        title={words.jumpToOriginal}
+                        aria-label={words.jumpToOriginal}
+                        disabled={message.replyTo.unavailable}
+                        onClick={() => void onQuoteJump(message.replyTo?.id ?? "")}
+                      >
+                        <strong>
+                          {message.replyTo.authorId ? nameOf(message.replyTo.authorId) : words.replyUnavailable}
+                        </strong>
+                        <span>{quotePreview(message.replyTo, words)}</span>
+                      </button>
+                    )}
                     {message.deletedAt && <span className="ci-deleted-message">{words.messageDeleted}</span>}
                     {!message.deletedAt && message.attachments.length > 0 && mediaCall !== undefined && (
                       <span className="ci-files">
@@ -784,6 +836,9 @@ function Thread({
 }
 
 function Composer({
+  replyTarget,
+  onCancelReply,
+  nameOf,
   onTyping,
   words,
   locale,
@@ -795,11 +850,18 @@ function Composer({
   locale: string;
   mediaCall: MediaCall | undefined;
   extra: ReactNode;
-  onSend(text: string, attachmentIds: readonly string[]): Promise<boolean>;
+  onSend(text: string, attachmentIds: readonly string[], replyToId?: string): Promise<boolean>;
+  replyTarget: Message | undefined;
+  onCancelReply(): void;
+  nameOf(id: string): string;
   onTyping(active: boolean): void;
 }) {
   const draft = useRef("");
   const draftInput = useRef<HTMLInputElement>(null);
+  const replyId = replyTarget?.id;
+  useEffect(() => {
+    if (replyId) draftInput.current?.focus();
+  }, [replyId]);
   const [draftLength, setDraftLength] = useState(0);
   const [blockedCharacters, setBlockedCharacters] = useState(0);
   const [hasText, setHasText] = useState(false);
@@ -842,6 +904,7 @@ function Composer({
   /** The file already uploaded, waiting for the message that will carry it. */
   const [waiting, setWaiting] = useState<Attachment>();
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [problem, setProblem] = useState<string>();
   const picker = useRef<HTMLInputElement>(null);
 
@@ -859,12 +922,17 @@ function Composer({
       return;
     }
     setUploading(true);
+    setUploadProgress(0);
     try {
-      const attachment = await uploadMedia(mediaCall, {
-        name: file.name,
-        mimeType: file.type,
-        bytes: new Uint8Array(await file.arrayBuffer()),
-      });
+      const attachment = await uploadAttachment(
+        mediaCall,
+        {
+          name: file.name,
+          mimeType: file.type,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        },
+        setUploadProgress,
+      );
       setWaiting(attachment);
     } catch (error) {
       const code = error instanceof Error ? error.message : undefined;
@@ -886,6 +954,24 @@ function Composer({
 
   return (
     <div className="ci-composer">
+      {replyTarget && (
+        <div className="ci-reply-preview" role="status">
+          <Icon name="reply" />
+          <div>
+            <strong>{words.replyingTo.replace("{name}", nameOf(replyTarget.authorId))}</strong>
+            <span>{quotePreview(quoteOf(replyTarget), words)}</span>
+          </div>
+          <button
+            type="button"
+            className="ci-icon-button"
+            aria-label={words.cancelReply}
+            title={words.cancelReply}
+            onClick={onCancelReply}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+      )}
       {problem !== undefined && <p className="ci-problem">{problem}</p>}
       {waiting !== undefined && (
         <p className="ci-waiting">
@@ -915,7 +1001,7 @@ function Composer({
           setSending(true);
           let sent = false;
           try {
-            sent = await onSend(text, carried === undefined ? [] : [carried.id]);
+            sent = await onSend(text, carried === undefined ? [] : [carried.id], replyTarget?.id);
           } catch {
             setProblem(words.refusalFor("chat_failed"));
           } finally {
@@ -961,7 +1047,7 @@ function Composer({
         {extra !== undefined && extra !== null && <span className="ci-slot">{extra}</span>}
         <input
           className="ci-field"
-          placeholder={uploading ? words.uploading : words.write}
+          placeholder={uploading ? `${words.uploading} ${uploadProgress}%` : words.write}
           ref={draftInput}
           defaultValue=""
           onBlur={stopTyping}

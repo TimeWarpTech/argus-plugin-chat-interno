@@ -6,7 +6,7 @@
  */
 import type { PluginCall, PluginStream } from "@creativepetabyte/argus-sdk/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CHAT, type Colleague, type Conversation, type Message, refusalIn, TOPIC } from "./model";
+import { CHAT, type Colleague, type Conversation, type Message, redactRepliesTo, refusalIn, TOPIC } from "./model";
 import type { Words } from "./words";
 
 /** How long an arriving message stays lit. Long enough to notice, short enough not to nag. */
@@ -40,7 +40,8 @@ export interface Chat {
   ): Promise<boolean>;
   revealHistory(messages: Message[]): void;
   deleteMessage(messageId: string): Promise<boolean>;
-  send(text: string, attachmentIds?: readonly string[]): Promise<boolean>;
+  send(text: string, attachmentIds?: readonly string[], replyToId?: string): Promise<boolean>;
+  loadReply(messageId: string): Promise<boolean>;
 }
 
 export function useChat({ call, stream, words }: Options): Chat {
@@ -205,10 +206,13 @@ export function useChat({ call, stream, words }: Options): Chat {
       setRevision((value) => value + 1);
       if (event.type === "chat.internal.v1.MessageDeleted") {
         setMessages((current) =>
-          current.map((message) =>
-            message.id === event.key
-              ? { ...message, text: "", attachments: [], deletedAt: new Date().toISOString() }
-              : message,
+          redactRepliesTo(
+            current.map((message) =>
+              message.id === event.key
+                ? { ...message, text: "", attachments: [], deletedAt: new Date().toISOString() }
+                : message,
+            ),
+            event.key,
           ),
         );
       }
@@ -311,7 +315,12 @@ export function useChat({ call, stream, words }: Options): Chat {
         if (!accepted(answer)) return false;
         const message = (answer as { message?: Message })?.message;
         if (!message) return false;
-        setMessages((current) => current.map((item) => (item.id === message.id ? message : item)));
+        setMessages((current) =>
+          redactRepliesTo(
+            current.map((item) => (item.id === message.id ? message : item)),
+            message.id,
+          ),
+        );
         setRevision((value) => value + 1);
         await loadConversations();
         return true;
@@ -320,13 +329,41 @@ export function useChat({ call, stream, words }: Options): Chat {
         return false;
       }
     },
-    async send(text, attachmentIds = []) {
+    async loadReply(messageId) {
+      const id = currentConversation.current;
+      if (!call || !id) return false;
+      let history = messages;
+      while (!history.some((message) => message.id === messageId)) {
+        const oldest = history[0]?.seq;
+        const answer = await call(CHAT, "Messages", {
+          conversationId: id,
+          limit: 200,
+          ...(oldest === undefined ? {} : { before: oldest }),
+        });
+        if (currentConversation.current !== id || !accepted(answer)) return false;
+        const page = (answer as { messages?: Message[] })?.messages;
+        if (!Array.isArray(page) || page.length === 0) {
+          setProblem(words.replyUnavailable);
+          return false;
+        }
+        if (oldest !== undefined && (page[0]?.seq ?? oldest) >= oldest) return false;
+        history = [...page, ...history];
+      }
+      setMessages((current) =>
+        [...new Map([...history, ...current].map((message) => [message.id, message])).values()].sort(
+          (a, b) => a.seq - b.seq,
+        ),
+      );
+      return true;
+    },
+    async send(text, attachmentIds = [], replyToId) {
       // A file with no words is a message; nothing at all is not.
       if (openId === undefined || (text.trim() === "" && attachmentIds.length === 0)) return false;
       const answer = await call?.(CHAT, "Send", {
         conversationId: openId,
         text,
         attachmentIds: [...attachmentIds],
+        ...(replyToId === undefined ? {} : { replyToId }),
       });
       if (!accepted(answer)) return false;
       await loadMessages(openId);

@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import type { Attachment } from "@creativepetabyte/argus-chat-media";
 import { and, desc, eq, gt, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { MAX_TEXT } from "../shared/limits.js";
+import type { QuotedMessage } from "../shared/messages.js";
 import { openDatabase } from "./db.js";
 import { MediaStore } from "./media-store.js";
 import { attachmentChunks, attachments, conversations, messageReceipts, messages, participants } from "./schema.js";
@@ -49,6 +50,7 @@ export interface Message {
   deletedAt?: string;
   deletedBy?: string;
   receipts?: Receipt[];
+  replyTo?: QuotedMessage;
 }
 
 export interface ConversationSummary extends Conversation {
@@ -89,6 +91,7 @@ export interface Store {
     text: string;
     messageId?: string;
     attachmentIds?: readonly string[];
+    replyToId?: string;
   }): Promise<Message>;
   /**
    * A message the SYSTEM wrote, which is the only message with no person behind it.
@@ -164,17 +167,36 @@ export function openStore(folder: string | undefined): Store {
   };
 
   /** A message with whatever it carries. */
-  const withFiles = async (row: typeof messages.$inferSelect): Promise<Message> => ({
-    id: row.id,
-    conversationId: row.conversationId,
-    authorId: row.authorId,
-    text: row.text,
-    at: row.at,
-    seq: row.seq,
-    attachments: row.deletedAt === null ? await media.attachmentsOf(row.id) : [],
-    ...(row.deletedAt === null ? {} : { deletedAt: row.deletedAt }),
-    ...(row.deletedBy === null ? {} : { deletedBy: row.deletedBy }),
-  });
+  const withFiles = async (row: typeof messages.$inferSelect, clearedThrough = 0): Promise<Message> => {
+    let replyTo: QuotedMessage | undefined;
+    if (row.replyToId && row.deletedAt === null) {
+      const [original] = await db.select().from(messages).where(eq(messages.id, row.replyToId));
+      if (!original || original.conversationId !== row.conversationId || original.seq <= clearedThrough)
+        replyTo = { id: row.replyToId, unavailable: true };
+      else if (original.deletedAt !== null)
+        replyTo = { id: original.id, seq: original.seq, authorId: original.authorId, deleted: true };
+      else
+        replyTo = {
+          id: original.id,
+          seq: original.seq,
+          authorId: original.authorId,
+          text: original.text,
+          attachmentNames: (await media.attachmentsOf(original.id)).map((file) => file.name),
+        };
+    }
+    return {
+      id: row.id,
+      conversationId: row.conversationId,
+      authorId: row.authorId,
+      text: row.text,
+      at: row.at,
+      seq: row.seq,
+      attachments: row.deletedAt === null ? await media.attachmentsOf(row.id) : [],
+      ...(row.deletedAt === null ? {} : { deletedAt: row.deletedAt }),
+      ...(row.deletedBy === null ? {} : { deletedBy: row.deletedBy }),
+      ...(replyTo ? { replyTo } : {}),
+    };
+  };
 
   const withReceipts = async (message: Message, userId?: string): Promise<Message> => {
     if (message.authorId !== userId || message.deletedAt) return message;
@@ -239,7 +261,7 @@ export function openStore(folder: string | undefined): Store {
       .where(and(eq(messages.conversationId, conversationId), gt(messages.seq, clearedThrough)))
       .orderBy(desc(messages.seq))
       .limit(1);
-    return last === undefined ? undefined : await withFiles(last);
+    return last === undefined ? undefined : await withFiles(last, clearedThrough);
   };
 
   const summaryOf = async (row: typeof conversations.$inferSelect): Promise<ConversationSummary> => ({
@@ -531,7 +553,7 @@ export function openStore(folder: string | undefined): Store {
       return (await byId(messageId))?.conversationId;
     },
 
-    send({ conversationId, authorId, text, messageId, attachmentIds = [] }) {
+    send({ conversationId, authorId, text, messageId, attachmentIds = [], replyToId }) {
       return database.write(async () => {
         const body = text.trim();
         // A file IS the message when there are no words, which is how anybody sends a photo.
@@ -545,10 +567,32 @@ export function openStore(folder: string | undefined): Store {
         const already = await byId(id);
         if (already !== undefined) return withFiles(already);
 
+        if (replyToId !== undefined) {
+          const original = await byId(replyToId);
+          const [person] = await db
+            .select()
+            .from(participants)
+            .where(and(eq(participants.conversationId, conversationId), eq(participants.userId, authorId)));
+          if (
+            !original ||
+            original.conversationId !== conversationId ||
+            original.deletedAt !== null ||
+            original.seq <= (person?.clearedThrough ?? 0)
+          )
+            throw new Error("invalid_reply");
+        }
+
         // Checked BEFORE the message exists, so a half-uploaded file cannot leave a message pointing
         // at nothing. `ready` refuses anything unfinished or already owned, by name.
         await media.ready(attachmentIds);
-        await db.insert(messages).values({ id, conversationId, authorId, text: body, at: new Date().toISOString() });
+        await db.insert(messages).values({
+          id,
+          conversationId,
+          authorId,
+          text: body,
+          at: new Date().toISOString(),
+          ...(replyToId === undefined ? {} : { replyToId }),
+        });
         await media.bind(attachmentIds, id);
         await recordRecipients(conversationId, id, authorId);
 
@@ -611,7 +655,8 @@ export function openStore(folder: string | undefined): Store {
         .limit(limit);
 
       const page: Message[] = [];
-      for (const row of rows.reverse()) page.push(await withReceipts(await withFiles(row), options?.userId));
+      for (const row of rows.reverse())
+        page.push(await withReceipts(await withFiles(row, person?.clearedThrough ?? 0), options?.userId));
       return page;
     },
 

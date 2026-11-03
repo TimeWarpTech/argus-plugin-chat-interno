@@ -57,6 +57,7 @@ export const messages = sqliteTable(
     at: text("at").notNull(),
     deletedAt: text("deleted_at"),
     deletedBy: text("deleted_by"),
+    replyToId: text("reply_to_id"),
   },
   (table) => [
     unique("messages_id").on(table.id),

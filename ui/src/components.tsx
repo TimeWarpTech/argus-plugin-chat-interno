@@ -167,6 +167,7 @@ export type IconName =
   | "info"
   | "trash"
   | "logout"
+  | "reply"
   | "more";
 
 export function Icon({ name }: { name: IconName }) {
@@ -184,6 +185,7 @@ export function Icon({ name }: { name: IconName }) {
     trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
     logout: "M9 21H3V3h6M12 12h10m-5-5 5 5-5 5",
     more: "M5 12h.01M12 12h.01M19 12h.01",
+    reply: "m9 10-5 5 5 5M4 15h10a6 6 0 0 0 0-12h-2",
   };
   return (
     <svg

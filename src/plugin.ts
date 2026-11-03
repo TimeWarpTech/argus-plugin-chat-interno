@@ -519,6 +519,7 @@ const plugin = definePlugin({
         if (conversationId === undefined) return refusal("no_such_conversation");
         const text = typeof asRecord(input).text === "string" ? (asRecord(input).text as string) : "";
         const messageId = stringAt(input, "messageId");
+        const replyToId = stringAt(input, "replyToId");
         const attachmentIds = stringsAt(input, "attachmentIds");
         try {
           // The author is the person the KERNEL named. Whatever the input claims is ignored:
@@ -528,6 +529,7 @@ const plugin = definePlugin({
             authorId: me,
             text,
             attachmentIds,
+            ...(replyToId === undefined ? {} : { replyToId }),
             ...(messageId === undefined ? {} : { messageId }),
           });
           // Sending is reading, for the sender: their own message must not come back unread.

@@ -67,6 +67,75 @@ afterEach(async () => {
 });
 
 describe("rendering live chat", () => {
+  it("replies through the message menu, preserves the draft on cancel and displays the saved quote", async () => {
+    const history = structuredClone(messages);
+    const call: PluginCall = vi.fn(async (_contract, name, input) => {
+      switch (name) {
+        case "Conversations":
+          return { conversations: [conversation] };
+        case "Colleagues":
+          return { colleagues: [{ userId: "ana", name: "Ana", role: "owner" }] };
+        case "Messages":
+          return { messages: structuredClone(history) };
+        case "Typing":
+          return { now: Date.now(), typing: [] };
+        case "Send": {
+          const data = input as { text: string; replyToId: string };
+          const reply: Message = {
+            id: "reply-1",
+            seq: 14,
+            conversationId: "group-1",
+            authorId: "bruno",
+            text: data.text,
+            at: "2026-11-02T12:00:00Z",
+            attachments: [],
+            replyTo: { id: data.replyToId, seq: 12, authorId: "ana", text: "eae" },
+          };
+          history.push(reply);
+          return { message: reply };
+        }
+        default:
+          return {};
+      }
+    });
+    await act(async () => root.render(createElement(ChatInternoPage, { call, me: "bruno", locale: "pt-BR" })));
+    await act(async () => container.querySelector<HTMLButtonElement>(".ci-entry")?.click());
+    const chooseReply = async () => {
+      await act(async () => container.querySelector<HTMLButtonElement>(".ci-message-actions")?.click());
+      const option = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (button) => button.textContent === "Responder",
+      );
+      if (!option) throw new Error("reply option missing");
+      await act(async () => option.click());
+    };
+    await chooseReply();
+    expect(container.querySelector(".ci-reply-preview")?.textContent).toContain("Respondendo a Ana");
+    const input = container.querySelector<HTMLInputElement>(".ci-compose .ci-field");
+    if (!input) throw new Error("input missing");
+    expect(document.activeElement).toBe(input);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "Resposta");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Cancelar resposta"]')?.click());
+    expect(container.querySelector(".ci-reply-preview")).toBeNull();
+    expect(input.value).toBe("Resposta");
+    await chooseReply();
+    await act(async () =>
+      container
+        .querySelector<HTMLFormElement>(".ci-compose")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(vi.mocked(call).mock.calls.find((args) => args[1] === "Send")?.[2]).toMatchObject({
+      text: "Resposta",
+      replyToId: "m-12",
+    });
+    expect(container.querySelector(".ci-reply-preview")).toBeNull();
+    expect(container.querySelector(".ci-quote")?.textContent).toContain("eae");
+    await act(async () => container.querySelector<HTMLButtonElement>(".ci-quote")?.click());
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+  });
+
   it("renders the JSX navigation icon and navigates to the chat with the active route marked", async () => {
     const navigate = vi.fn();
     await act(async () =>

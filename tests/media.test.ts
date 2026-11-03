@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeBytes, MEDIA_CHUNK_BYTES } from "@creativepetabyte/argus-chat-media";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MAX_MEDIA_BYTES, PENDING_MEDIA_QUOTA } from "../shared/limits.js";
 import { openStore, type Store } from "../src/store.js";
 
 let folder: string;
@@ -31,6 +32,20 @@ async function upload(bytes: Uint8Array, name = "foto.png", mimeType = "image/pn
 }
 
 describe("uploading a file in pieces", () => {
+  it("accepts the raised limit and caps the total size of pending uploads", async () => {
+    expect((await store.media.create("grande.bin", "application/octet-stream", 11 * 1024 * 1024)).size).toBe(
+      11 * 1024 * 1024,
+    );
+    const first = await store.media.create("limite.bin", "application/octet-stream", MAX_MEDIA_BYTES);
+    expect(first.size).toBe(MAX_MEDIA_BYTES);
+    const remaining = PENDING_MEDIA_QUOTA - MAX_MEDIA_BYTES - 11 * 1024 * 1024;
+    for (let bytes = remaining; bytes > 0; bytes -= MAX_MEDIA_BYTES)
+      await store.media.create("pendente.bin", "application/octet-stream", Math.min(bytes, MAX_MEDIA_BYTES));
+    await expect(store.media.create("extra.bin", "application/octet-stream", 1)).rejects.toThrow(
+      "upload_quota_exceeded",
+    );
+  });
+
   it("comes back byte for byte, across more than one chunk", async () => {
     const bytes = fileOf(MEDIA_CHUNK_BYTES + 1234);
     const attachment = await upload(bytes);
@@ -69,7 +84,7 @@ describe("uploading a file in pieces", () => {
   });
 
   it("refuses a file larger than the limit", async () => {
-    await expect(store.media.create("enorme.bin", "application/octet-stream", 11 * 1024 * 1024)).rejects.toThrow(
+    await expect(store.media.create("enorme.bin", "application/octet-stream", MAX_MEDIA_BYTES + 1)).rejects.toThrow(
       "invalid_attachment",
     );
   });

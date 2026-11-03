@@ -6,6 +6,11 @@
  * and forgotten in the other is a compile error rather than a gap somebody finds in production.
  */
 const ptBR = {
+  reply: "Responder",
+  replyingTo: "Respondendo a {name}",
+  cancelReply: "Cancelar resposta",
+  jumpToOriginal: "Ver mensagem original",
+  replyUnavailable: "Mensagem original indisponível",
   textLimitTitle: "Mensagem muito longa",
   textLimitHint:
     "O limite é de 4.000 caracteres. Os caracteres extras não são adicionados. Remova parte do texto para continuar escrevendo.",
@@ -112,7 +117,7 @@ const ptBR = {
   close: "Fechar",
   loading: "Abrindo…",
   fileFailed: "Não deu para abrir este arquivo.",
-  tooBig: "Arquivo grande demais. O limite é 10 MB.",
+  tooBig: "Arquivo grande demais. O limite é 50 MB.",
   sizeLimit: "Arquivos de até {size}.",
   directoryOff: "Este servidor não mostra quem trabalha aqui, então não dá para começar uma conversa nova.",
 };
@@ -120,6 +125,11 @@ const ptBR = {
 type Catalog = typeof ptBR;
 
 const en: Catalog = {
+  reply: "Reply",
+  replyingTo: "Replying to {name}",
+  cancelReply: "Cancel reply",
+  jumpToOriginal: "View original message",
+  replyUnavailable: "Original message unavailable",
   textLimitTitle: "Message too long",
   textLimitHint:
     "The limit is 4,000 characters. Extra characters are not added. Remove part of the text to keep writing.",
@@ -226,7 +236,7 @@ const en: Catalog = {
   close: "Close",
   loading: "Opening…",
   fileFailed: "That file could not be opened.",
-  tooBig: "That file is too large. The limit is 10 MB.",
+  tooBig: "That file is too large. The limit is 50 MB.",
   sizeLimit: "Files up to {size}.",
   directoryOff: "This server does not list who works here, so a new conversation cannot be started.",
 };
@@ -238,6 +248,8 @@ const en: Catalog = {
  * a code nobody mapped falls back to one that is still honest.
  */
 const refusalsPtBR = {
+  invalid_reply:
+    "Não é possível responder a esta mensagem. Ela pode ter sido apagada ou não estar mais disponível nesta conversa.",
   admin_required: "Apenas administradores do grupo podem fazer isso.",
   last_admin: "Promova outra pessoa antes de remover o último administrador.",
   invalid_group_role: "Escolha um participante e uma função válida.",
@@ -258,13 +270,15 @@ const refusalsPtBR = {
   upload_conflict: "O envio deste arquivo se atrapalhou. Tente de novo.",
   invalid_media_chunk: "O arquivo chegou corrompido. Tente de novo.",
   invalid_upload_offset: "O envio deste arquivo saiu de ordem. Tente de novo.",
-  media_size_limit: "Arquivo grande demais. O limite é 10 MB.",
+  media_size_limit: "Arquivo grande demais. O limite é 50 MB.",
   chat_failed: "Não deu para completar. Tente de novo.",
 };
 
 type Refusals = typeof refusalsPtBR;
 
 const refusalsEn: Refusals = {
+  invalid_reply:
+    "Cannot reply to this message. It may have been deleted or may no longer be available in this conversation.",
   admin_required: "Only group administrators can do this.",
   last_admin: "Promote someone else before removing the last administrator.",
   invalid_group_role: "Choose a participant and a valid role.",
@@ -285,7 +299,7 @@ const refusalsEn: Refusals = {
   upload_conflict: "That upload got tangled. Try again.",
   invalid_media_chunk: "The file arrived corrupted. Try again.",
   invalid_upload_offset: "That upload went out of order. Try again.",
-  media_size_limit: "That file is too large. The limit is 10 MB.",
+  media_size_limit: "That file is too large. The limit is 50 MB.",
   chat_failed: "That did not go through. Try again.",
 };
 

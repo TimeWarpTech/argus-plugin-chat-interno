@@ -3,16 +3,16 @@
  *
  * No upload endpoint and no public URL: the bytes travel in 48 KiB pieces over the same
  * authenticated contract call the screen already uses — the shape
- * `@creativepetabyte/argus-chat-media` defines and `chat-tickets` already ships. The chunk size and
- * the ceiling come from there rather than being chosen again here, because two sides that disagree
- * about a chunk boundary corrupt a file without anybody noticing.
+ * `@creativepetabyte/argus-chat-media` defines. The 48 KiB chunk encoding stays shared; this plugin
+ * declares its own file ceiling in `shared/limits.ts` for both client and storage.
  *
  * A file lives in two states. **Pending**: uploaded, owned by nobody, collectable. **Bound**: named
  * by a message, readable by whoever may read that message. Nothing is readable while pending, so a
  * half-uploaded file is never shown, and an upload somebody abandoned is swept after a day.
  */
-import { type Attachment, MAX_MEDIA_BYTES, MEDIA_CHUNK_BYTES } from "@creativepetabyte/argus-chat-media";
+import { type Attachment, MEDIA_CHUNK_BYTES } from "@creativepetabyte/argus-chat-media";
 import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { MAX_MEDIA_BYTES, PENDING_MEDIA_QUOTA } from "../shared/limits.js";
 import type { Database } from "./db.js";
 import { attachmentChunks, attachments } from "./schema.js";
 
@@ -20,7 +20,7 @@ import { attachmentChunks, attachments } from "./schema.js";
 const PENDING_MS = 24 * 60 * 60 * 1000;
 
 /** How much unclaimed upload one company may hold at once, so an abandoned tab cannot fill a disk. */
-const PENDING_QUOTA = 50 * 1024 * 1024;
+const PENDING_QUOTA = PENDING_MEDIA_QUOTA;
 
 const NAME_MAX = 200;
 const MIME_MAX = 150;

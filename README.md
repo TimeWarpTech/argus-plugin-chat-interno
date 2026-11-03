@@ -9,7 +9,7 @@ file, asks the kernel for one thing only — the staff directory — and announc
 
 ## Files
 
-Text, images, audio, video and any other file, up to 10 MB each.
+Text, images, audio, video and any other file, up to 50 MB each.
 
 There is **no upload endpoint and no public URL**. The bytes travel in 48 KiB pieces over the same
 authenticated contract call the screen already uses — the shape
@@ -18,7 +18,7 @@ encoded, is 64 KB, which fits inside the 100 KB a plugin call accepts: that numb
 size is what it is, and it is why this works without a single change to the kernel.
 
 A file lives in two states. **Pending** — uploaded, owned by nobody, swept after a day, and capped at
-50 MB per company so an abandoned tab cannot fill a disk. **Bound** — claimed by a message, readable
+200 MB per company so an abandoned tab cannot fill a disk. **Bound** — claimed by a message, readable
 by whoever may read that message, and deleted with the conversation. Nothing is readable while
 pending, so a half-uploaded file is never shown.
 

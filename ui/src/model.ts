@@ -4,6 +4,7 @@
  * Nothing here touches React or the network, which is why it can be tested with nothing running.
  */
 import type { Attachment } from "@creativepetabyte/argus-chat-media";
+import type { QuotedMessage } from "../../shared/messages.js";
 import type { Words } from "./words";
 
 export const CHAT = "chat.internal.v1.InternalChat";
@@ -47,7 +48,42 @@ export interface Message {
   attachments: Attachment[];
   deletedAt?: string;
   deletedBy?: string;
+  replyTo?: QuotedMessage;
   receipts?: { userId: string; delivered: boolean; read: boolean; deliveredAt: string | null; readAt: string | null }[];
+}
+
+export function quoteOf(message: Message): QuotedMessage {
+  return message.deletedAt
+    ? { id: message.id, seq: message.seq, authorId: message.authorId, deleted: true }
+    : {
+        id: message.id,
+        seq: message.seq,
+        authorId: message.authorId,
+        text: message.text,
+        attachmentNames: message.attachments.map((file) => file.name),
+      };
+}
+
+export function quotePreview(quote: QuotedMessage, words: Pick<Words, "messageDeleted" | "replyUnavailable">): string {
+  if (quote.unavailable) return words.replyUnavailable;
+  if (quote.deleted) return words.messageDeleted;
+  return quote.text || quote.attachmentNames?.join(", ") || "";
+}
+
+export function redactRepliesTo(messages: Message[], deletedId: string): Message[] {
+  return messages.map((message) => {
+    const quote = message.replyTo;
+    if (quote?.id !== deletedId) return message;
+    return {
+      ...message,
+      replyTo: {
+        id: quote.id,
+        deleted: true,
+        ...(quote.authorId === undefined ? {} : { authorId: quote.authorId }),
+        ...(quote.seq === undefined ? {} : { seq: quote.seq }),
+      },
+    };
+  });
 }
 
 export interface Conversation {
