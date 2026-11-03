@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `reply_to_id` text;

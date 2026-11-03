@@ -58,16 +58,16 @@ describe("a group", () => {
 describe("sending", () => {
   it("refuses somebody who is not in the conversation", async () => {
     const conversation = await store.openDirect("ana", "bruno");
-    await expect(
-      store.send({ conversationId: conversation.id, authorId: "carla", text: "oi" }),
-    ).rejects.toThrow("not_a_participant");
+    await expect(store.send({ conversationId: conversation.id, authorId: "carla", text: "oi" })).rejects.toThrow(
+      "not_a_participant",
+    );
   });
 
   it("refuses an empty text, so a blank message cannot exist", async () => {
     const conversation = await store.openDirect("ana", "bruno");
-    await expect(
-      store.send({ conversationId: conversation.id, authorId: "ana", text: "   " }),
-    ).rejects.toThrow("empty_message");
+    await expect(store.send({ conversationId: conversation.id, authorId: "ana", text: "   " })).rejects.toThrow(
+      "empty_message",
+    );
   });
 
   it("gives every message a growing sequence, which is what orders them", async () => {

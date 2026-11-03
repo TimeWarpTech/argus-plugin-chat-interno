@@ -8,6 +8,34 @@
       "when": 1793129754006,
       "tag": "0000_gifted_peter_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793658937049,
+      "tag": "0001_pink_maria_hill",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793660485375,
+      "tag": "0002_familiar_jack_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793661556214,
+      "tag": "0003_charming_night_thrasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793671712794,
+      "tag": "0004_hot_nico_minoru",
+      "breakpoints": true
     }
   ]
 }

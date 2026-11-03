@@ -5,14 +5,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  type ContractMethods,
-  contextFor,
-  type Host,
-  runPluginConformance,
-} from "@creativepetabyte/argus-sdk";
+import { type ContractMethods, contextFor, type Host, runPluginConformance } from "@creativepetabyte/argus-sdk";
 import { createFakeHost, type FakeHost } from "@creativepetabyte/argus-sdk/testing";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GROUP_ADMINS_CHANGED, GROUP_UPDATED, TYPING_CHANGED } from "../src/events.js";
 import plugin, { CHAT, MESSAGE_SENT } from "../src/plugin.js";
 
 let folders: string[] = [];
@@ -75,10 +71,7 @@ describe("who is speaking", () => {
     const { methods } = company(createFakeHost());
     const conversation = (await methods.OpenGroup?.({ name: "Plantão" }, {})) as { conversation: { id: string } };
 
-    const answer = await methods.Send?.(
-      { conversationId: conversation.conversation.id, text: "oi" },
-      {},
-    );
+    const answer = await methods.Send?.({ conversationId: conversation.conversation.id, text: "oi" }, {});
 
     expect(answer).toEqual({ error: "no_caller" });
   });
@@ -101,6 +94,119 @@ describe("who is speaking", () => {
 });
 
 describe("a conversation", () => {
+  it("announces temporary typing under the authenticated caller without writing a message", async () => {
+    const host = createFakeHost();
+    const { methods } = company(host);
+    const opened = (await methods.OpenDirect?.({ withUserId: "bruno" }, { caller: ANA })) as {
+      conversation: { id: string };
+    };
+    const conversationId = opened.conversation.id;
+    expect(await methods.SetTyping?.({ conversationId, active: true }, {})).toEqual({ error: "no_caller" });
+    expect(
+      await methods.SetTyping?.({ conversationId, active: true }, { caller: { userId: "carla", role: "owner" } }),
+    ).toEqual({ error: "not_a_participant" });
+    await methods.SetTyping?.(
+      { conversationId, active: true, userId: "bruno", text: "private draft" },
+      { caller: ANA },
+    );
+    const event = host.emitted.find((entry) => entry.type === TYPING_CHANGED);
+    expect(event?.payload).toMatchObject({
+      conversationId,
+      userId: "ana",
+      active: true,
+      expiresAt: expect.any(Number),
+    });
+    expect(event?.payload).not.toHaveProperty("text");
+    expect(await methods.Typing?.({ conversationId }, { caller: BRUNO })).toMatchObject({
+      typing: [{ userId: "ana" }],
+    });
+    expect(await methods.Messages?.({ conversationId }, { caller: BRUNO })).toMatchObject({ messages: [] });
+    await methods.SetTyping?.({ conversationId, active: false }, { caller: ANA });
+    expect(await methods.Typing?.({ conversationId }, { caller: BRUNO })).toMatchObject({ typing: [] });
+  });
+
+  it("emits the persisted admin list on promotion and demotion, and emits nothing for a rejected change", async () => {
+    const host = createFakeHost();
+    const { methods } = company(host);
+    const opened = (await methods.OpenGroup?.({ name: "Equipe", memberIds: ["bruno"] }, { caller: ANA })) as {
+      conversation: { id: string };
+    };
+    const conversationId = opened.conversation.id;
+    const events = () => host.emitted.filter((event) => event.type === GROUP_ADMINS_CHANGED);
+    await methods.SetGroupAdmin?.({ conversationId, memberId: "bruno", isAdmin: true }, { caller: BRUNO });
+    expect(events()).toHaveLength(0);
+    await methods.SetGroupAdmin?.({ conversationId, memberId: "bruno", isAdmin: true }, { caller: ANA });
+    expect(events()).toHaveLength(1);
+    expect(events()[0]?.payload).toMatchObject({
+      conversationId,
+      memberId: "bruno",
+      isAdmin: true,
+      admins: expect.arrayContaining(["ana", "bruno"]),
+      by: "ana",
+    });
+    expect(await methods.Conversations?.({}, { caller: BRUNO })).toMatchObject({
+      conversations: [{ id: conversationId, admins: expect.arrayContaining(["ana", "bruno"]) }],
+    });
+    await methods.SetGroupAdmin?.({ conversationId, memberId: "bruno", isAdmin: false }, { caller: ANA });
+    expect(events()).toHaveLength(2);
+    expect(events()[1]?.payload).toMatchObject({
+      conversationId,
+      memberId: "bruno",
+      isAdmin: false,
+      admins: ["ana"],
+      by: "ana",
+    });
+    expect(await methods.Conversations?.({}, { caller: BRUNO })).toMatchObject({
+      conversations: [{ id: conversationId, admins: ["ana"] }],
+    });
+    expect(plugin.manifest.emits).toContain(GROUP_ADMINS_CHANGED);
+  });
+
+  it("uses the authenticated caller for promotions and deletion, ignoring an input that claims an admin", async () => {
+    const { methods } = company(createFakeHost());
+    const opened = (await methods.OpenGroup?.({ name: "Equipe", memberIds: ["bruno"] }, { caller: ANA })) as {
+      conversation: { id: string };
+    };
+    const conversationId = opened.conversation.id;
+    expect(
+      await methods.SetGroupAdmin?.(
+        { conversationId, memberId: "bruno", isAdmin: true, actorId: "ana" },
+        { caller: BRUNO },
+      ),
+    ).toEqual({ error: "admin_required" });
+    expect(await methods.SetGroupAdmin?.({ conversationId, memberId: "bruno", isAdmin: true }, {})).toEqual({
+      error: "no_caller",
+    });
+    expect(
+      await methods.SetGroupAdmin?.({ conversationId, memberId: "bruno", isAdmin: true }, { caller: ANA }),
+    ).toMatchObject({ admins: expect.arrayContaining(["ana", "bruno"]) });
+    const sent = (await methods.Send?.({ conversationId, text: "Teste" }, { caller: ANA })) as {
+      message: { id: string };
+    };
+    expect(await methods.DeleteMessage?.({ messageId: sent.message.id }, {})).toEqual({ error: "no_caller" });
+    expect(await methods.DeleteMessage?.({ messageId: sent.message.id }, { caller: BRUNO })).toMatchObject({
+      message: { text: "", deletedBy: "bruno" },
+    });
+  });
+
+  it("announces a renamed group so other open screens update their title", async () => {
+    const host = createFakeHost();
+    const { methods } = company(host);
+    const opened = (await methods.OpenGroup?.({ name: "Equipe", memberIds: ["bruno"] }, { caller: ANA })) as {
+      conversation: { id: string };
+    };
+    const conversationId = opened.conversation.id;
+    const answer = await methods.RenameGroup?.({ conversationId, name: "Atendimento" }, { caller: ANA });
+    expect(answer).toMatchObject({ conversation: { id: conversationId, name: "Atendimento" } });
+    expect(host.emitted.find((event) => event.type === GROUP_UPDATED)?.payload).toMatchObject({
+      conversationId,
+      name: "Atendimento",
+    });
+    const listed = await methods.Conversations?.({}, { caller: BRUNO });
+    expect(listed).toMatchObject({ conversations: [{ id: conversationId, name: "Atendimento" }] });
+    expect(plugin.manifest.emits).toContain(GROUP_UPDATED);
+  });
+
   it("is the same one when the other person opens it from their side", async () => {
     const { methods } = company(createFakeHost());
 
@@ -161,10 +267,7 @@ describe("sending", () => {
       conversation: { id: string };
     };
 
-    const answer = await methods.Send?.(
-      { conversationId: opened.conversation.id, text: "   " },
-      { caller: ANA },
-    );
+    const answer = await methods.Send?.({ conversationId: opened.conversation.id, text: "   " }, { caller: ANA });
 
     expect(answer).toEqual({ error: "empty_message" });
   });
@@ -301,4 +404,23 @@ describe("the conformance suite", () => {
 
     expect(failures.map((failure) => `${failure.scenario.name}: ${failure.got}`)).toEqual([]);
   });
+});
+
+it("notifies the other participant through the SDK with a link to the saved conversation", async () => {
+  const host = withColleagues();
+  const publish = vi.fn(async () => ({ created: 1, ids: [] }));
+  host.publishNotification = publish;
+  const { methods } = company(host);
+  const opened = (await methods.OpenDirect?.({ withUserId: "bruno" }, { caller: ANA })) as {
+    conversation: { id: string };
+  };
+  await methods.Send?.({ conversationId: opened.conversation.id, text: "Hello" }, { caller: ANA });
+  expect(publish).toHaveBeenCalledWith(
+    expect.objectContaining({
+      recipients: ["bruno"],
+      body: "Hello",
+      page: "chat-interno",
+      query: { conversation: opened.conversation.id },
+    }),
+  );
 });

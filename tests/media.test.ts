@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeBytes, MEDIA_CHUNK_BYTES } from "@creativepetabyte/argus-chat-media";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MAX_MEDIA_BYTES, PENDING_MEDIA_QUOTA } from "../shared/limits.js";
 import { openStore, type Store } from "../src/store.js";
 
 let folder: string;
@@ -19,23 +20,32 @@ afterEach(() => {
 });
 
 /** A file of `size` bytes whose content is predictable, so a round trip can be checked byte by byte. */
-const fileOf = (size: number): Uint8Array =>
-  Uint8Array.from({ length: size }, (_, index) => (index * 7) % 256);
+const fileOf = (size: number): Uint8Array => Uint8Array.from({ length: size }, (_, index) => (index * 7) % 256);
 
 /** Uploads a whole file the way the screen does: create, then one chunk at a time. */
 async function upload(bytes: Uint8Array, name = "foto.png", mimeType = "image/png") {
   const attachment = await store.media.create(name, mimeType, bytes.length);
   for (let offset = 0; offset < bytes.length; offset += MEDIA_CHUNK_BYTES) {
-    await store.media.write(
-      attachment.id,
-      offset,
-      encodeBytes(bytes.subarray(offset, offset + MEDIA_CHUNK_BYTES)),
-    );
+    await store.media.write(attachment.id, offset, encodeBytes(bytes.subarray(offset, offset + MEDIA_CHUNK_BYTES)));
   }
   return attachment;
 }
 
 describe("uploading a file in pieces", () => {
+  it("accepts the raised limit and caps the total size of pending uploads", async () => {
+    expect((await store.media.create("grande.bin", "application/octet-stream", 11 * 1024 * 1024)).size).toBe(
+      11 * 1024 * 1024,
+    );
+    const first = await store.media.create("limite.bin", "application/octet-stream", MAX_MEDIA_BYTES);
+    expect(first.size).toBe(MAX_MEDIA_BYTES);
+    const remaining = PENDING_MEDIA_QUOTA - MAX_MEDIA_BYTES - 11 * 1024 * 1024;
+    for (let bytes = remaining; bytes > 0; bytes -= MAX_MEDIA_BYTES)
+      await store.media.create("pendente.bin", "application/octet-stream", Math.min(bytes, MAX_MEDIA_BYTES));
+    await expect(store.media.create("extra.bin", "application/octet-stream", 1)).rejects.toThrow(
+      "upload_quota_exceeded",
+    );
+  });
+
   it("comes back byte for byte, across more than one chunk", async () => {
     const bytes = fileOf(MEDIA_CHUNK_BYTES + 1234);
     const attachment = await upload(bytes);
@@ -58,9 +68,7 @@ describe("uploading a file in pieces", () => {
   it("refuses a chunk that arrives out of order, so a file cannot be silently holed", async () => {
     const attachment = await store.media.create("a.bin", "application/octet-stream", MEDIA_CHUNK_BYTES * 2);
     const second = encodeBytes(fileOf(MEDIA_CHUNK_BYTES));
-    await expect(store.media.write(attachment.id, MEDIA_CHUNK_BYTES, second)).rejects.toThrow(
-      "invalid_upload_offset",
-    );
+    await expect(store.media.write(attachment.id, MEDIA_CHUNK_BYTES, second)).rejects.toThrow("invalid_upload_offset");
   });
 
   it("takes the same chunk twice as one, because a retry must not corrupt an upload", async () => {
@@ -71,16 +79,14 @@ describe("uploading a file in pieces", () => {
   });
 
   it("refuses a name or a type that does not look like one", async () => {
-    await expect(store.media.create("../escapar.png", "image/png", 10)).rejects.toThrow(
-      "invalid_attachment",
-    );
+    await expect(store.media.create("../escapar.png", "image/png", 10)).rejects.toThrow("invalid_attachment");
     await expect(store.media.create("a.png", "nao-e-um-tipo", 10)).rejects.toThrow("invalid_attachment");
   });
 
   it("refuses a file larger than the limit", async () => {
-    await expect(
-      store.media.create("enorme.bin", "application/octet-stream", 11 * 1024 * 1024),
-    ).rejects.toThrow("invalid_attachment");
+    await expect(store.media.create("enorme.bin", "application/octet-stream", MAX_MEDIA_BYTES + 1)).rejects.toThrow(
+      "invalid_attachment",
+    );
   });
 });
 
@@ -161,9 +167,7 @@ describe("reading a file back", () => {
     });
     const other = await store.send({ conversationId: conversation.id, authorId: "bruno", text: "outra" });
 
-    await expect(store.media.readChunk(attachment.id, other.id, 0)).rejects.toThrow(
-      "attachment_not_found",
-    );
+    await expect(store.media.readChunk(attachment.id, other.id, 0)).rejects.toThrow("attachment_not_found");
     expect((await store.media.readChunk(attachment.id, message.id, 0)).data).toBeTruthy();
   });
 });

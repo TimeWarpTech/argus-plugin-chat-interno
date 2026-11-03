@@ -97,8 +97,7 @@ export function openDatabase(folder: string | undefined): Database {
  * the plugin rather than leaving a half-migrated database that reads fine until it does not.
  */
 const hasTable = (raw: DatabaseSync, name: string): boolean =>
-  raw.prepare("SELECT 1 AS yes FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !==
-  undefined;
+  raw.prepare("SELECT 1 AS yes FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
 
 function migrate(raw: DatabaseSync): void {
   raw.exec("CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
@@ -119,10 +118,7 @@ function migrate(raw: DatabaseSync): void {
    */
   const first = files[0];
   if (first !== undefined && done.size === 0 && hasTable(raw, "conversations")) {
-    raw.prepare("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)").run(
-      first,
-      new Date().toISOString(),
-    );
+    raw.prepare("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)").run(first, new Date().toISOString());
     done.add(first);
   }
 
@@ -136,10 +132,7 @@ function migrate(raw: DatabaseSync): void {
         const trimmed = statement.trim();
         if (trimmed !== "") raw.exec(trimmed);
       }
-      raw.prepare("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)").run(
-        name,
-        new Date().toISOString(),
-      );
+      raw.prepare("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)").run(name, new Date().toISOString());
       raw.exec("COMMIT");
     } catch (error) {
       raw.exec("ROLLBACK");

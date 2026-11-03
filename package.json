@@ -6,6 +6,9 @@
   "scripts": {
     "start": "tsx src/main.ts",
     "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "node node_modules/@biomejs/biome/bin/biome check .",
+    "fix": "node node_modules/@biomejs/biome/bin/biome check --write .",
     "build:ui": "vite build --config ui/vite.config.ts",
     "serve-ui": "tsx src/serve-ui.ts",
     "db:generate": "drizzle-kit generate"
@@ -14,15 +17,20 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@creativepetabyte/argus-automation-nodes": "0.1.0",
     "@creativepetabyte/argus-chat-media": "github:TimeWarpTech/argus-chat-media",
-    "@creativepetabyte/argus-sdk": "file:../ModuliumChat/packages/plugin-sdk/dist",
+    "@creativepetabyte/argus-sdk": "file:vendor/creativepetabyte-argus-sdk-0.4.0.tgz",
     "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "drizzle-kit": "^0.31.11",
+    "jsdom": "^30.1.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tsx": "^4.23.15",

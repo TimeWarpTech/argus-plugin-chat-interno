@@ -2,8 +2,8 @@
  * The internal chat's screen.
  *
  * Everything lives inside a shadow root, so these names neither leak nor collide with the product's.
- * The layout is the one everybody already knows from a messaging app — a list beside a thread, the
- * thread scrolling under a fixed header and above a fixed composer — because the screen's job is to
+ * The layout is the one everybody already knows from a messaging app â€” a list beside a thread, the
+ * thread scrolling under a fixed header and above a fixed composer â€” because the screen's job is to
  * be used without being learned.
  *
  * It fills the height it is given rather than sitting in a short box: a conversation you can only
@@ -14,17 +14,17 @@
    * One brand colour, and everything else derived from the PRODUCT's own theme tokens.
    *
    * Those tokens are custom properties on `<html>`, and custom properties inherit through a shadow
-   * root — so mixing against `--color-panel` follows the product's own light/dark switch for free.
+   * root â€” so mixing against `--color-panel` follows the product's own light/dark switch for free.
    * Reading `prefers-color-scheme` instead was wrong and visibly so: the product went dark and this
    * screen stayed a white island inside it, because the switch is a class on `<html>`, not the OS.
    */
-  --brand: #25d366;
+  --brand: #00a884;
 
   /*
    * Only three of the product's tokens are read, and everything else is mixed from them.
    *
    * Tailwind v4 emits a theme variable only when some utility uses it, so `--color-thread` and
-   * `--color-surface` are simply absent at runtime — asking for them got the fallback, which is how
+   * `--color-surface` are simply absent at runtime â€” asking for them got the fallback, which is how
    * the thread stayed light while the rail went dark. These three back `bg-panel`, `text-*` and
    * `border-line`, so they are always there.
    */
@@ -34,12 +34,12 @@
 
   --rail: var(--bar);
   --canvas: color-mix(in srgb, var(--ink) 5%, var(--bar));
-  --paper: color-mix(in srgb, var(--ink) 9%, var(--bar));
+  --paper: color-mix(in srgb, var(--ink) 5%, var(--bar));
   --faint: color-mix(in srgb, var(--ink) 55%, var(--bar));
 
   /* The two bubbles. Mixed against the panel, so each one darkens with the product. */
   --mine: color-mix(in srgb, var(--brand) 22%, var(--bar));
-  --theirs: var(--paper);
+  --theirs: var(--bar);
   --accent: color-mix(in srgb, var(--brand) 72%, var(--ink));
   --unread: var(--brand);
   --unread-ink: color-mix(in srgb, var(--brand) 12%, #06281a);
@@ -57,12 +57,17 @@
   text-align: left;
 }
 
+.ci-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
 /* The list of conversations. */
 .ci-rail {
   display: flex;
   flex: none;
   flex-direction: column;
-  width: clamp(17rem, 30%, 26rem);
+  width: clamp(20rem, 33%, 27rem);
   min-height: 0;
   border-right: 1px solid var(--line);
   background: var(--rail);
@@ -73,9 +78,11 @@
   flex: none;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--line);
-  background: var(--bar);
+  margin: 0.25rem 1rem 0.75rem;
+  padding: 0.125rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--paper);
+  color: var(--faint);
 }
 
 .ci-search-field {
@@ -117,9 +124,9 @@
   align-items: center;
   gap: 0.75rem;
   width: 100%;
-  padding: 0.625rem 0.875rem;
+  padding: 1rem;
   border: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -132,7 +139,7 @@
 }
 
 .ci-entry.is-open {
-  background: color-mix(in srgb, currentcolor 9%, transparent);
+  background: color-mix(in srgb, var(--brand) 10%, var(--bar));
 }
 
 .ci-entry:focus-visible {
@@ -159,7 +166,7 @@
 
 .ci-entry-name {
   overflow: hidden;
-  font-weight: 500;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -230,60 +237,6 @@
   font-size: 0.875rem;
 }
 
-.ci-foot {
-  flex: none;
-  padding: 0.75rem;
-  border: 0;
-  border-top: 1px solid var(--line);
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-
-.ci-new-group {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.75rem;
-  border-top: 1px solid var(--line);
-  background: var(--bar);
-}
-
-.ci-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  max-height: 8rem;
-  overflow-y: auto;
-}
-
-.ci-chip {
-  padding: 0.25rem 0.625rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--paper);
-  color: inherit;
-  font: inherit;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-
-.ci-chip.is-picked {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-
-.ci-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
 /* The open conversation. */
 .ci-thread {
   display: flex;
@@ -311,7 +264,7 @@
 }
 
 .ci-who-name {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .ci-who-meta {
@@ -320,14 +273,43 @@
 }
 
 .ci-nothing {
-  display: grid;
+  display: flex;
   flex: 1;
-  place-items: center;
-  margin: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  border-bottom: 4px solid var(--brand);
   color: var(--faint);
+  text-align: center;
 }
 
-.ci-problem {
+.ci-nothing h2 {
+  margin: 0.5rem 0 0;
+  color: var(--ink);
+  font-size: 1.875rem;
+  font-weight: 400;
+}
+.ci-nothing p {
+  margin: 0;
+  font-size: 1rem;
+}
+.ci-nothing > span {
+  max-width: 24rem;
+  font-size: 0.8125rem;
+  line-height: 1.8;
+}
+.ci-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 7rem;
+  height: 7rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--brand) 10%, var(--bar));
+  color: var(--accent);
+}
+.ci-empty-icon .ci-problem {
   flex: none;
   margin: 0;
   padding: 0.5rem 1rem;
@@ -348,17 +330,8 @@
    * The faint lattice behind a conversation. Drawn rather than fetched: an image would be another
    * origin for the operator to approve, for a texture nobody looks at directly.
    */
-  background-image:
-    repeating-linear-gradient(
-      45deg,
-      color-mix(in srgb, var(--ink) 2.5%, transparent) 0 1px,
-      transparent 1px 14px
-    ),
-    repeating-linear-gradient(
-      -45deg,
-      color-mix(in srgb, var(--ink) 2.5%, transparent) 0 1px,
-      transparent 1px 14px
-    );
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 5%, transparent) 1px, transparent 1px);
+  background-size: 18px 18px;
 }
 
 .ci-day {
@@ -409,7 +382,7 @@
   background: var(--mine);
 }
 
-/* The tail, on the first bubble of a run only — that is what marks where somebody started talking. */
+/* The tail, on the first bubble of a run only â€” that is what marks where somebody started talking. */
 .ci-run > .ci-bubble:first-of-type {
   border-top-left-radius: 0;
 }
@@ -571,8 +544,10 @@
 .ci-clip:focus-visible,
 .ci-plain:focus-visible,
 .ci-go:focus-visible,
-.ci-chip:focus-visible,
-.ci-foot:focus-visible {
+.ci-icon-button:focus-visible,
+.ci-filter:focus-visible,
+.ci-selected-person:focus-visible,
+.ci-group-next:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -735,7 +710,7 @@
 /*
  * Where another plugin's contribution lands.
  *
- * It brings its own shadow root and its own error boundary, so nothing here styles its insides —
+ * It brings its own shadow root and its own error boundary, so nothing here styles its insides â€”
  * this only says how much room it gets and keeps it from pushing the chat around.
  */
 .ci-slot {
@@ -777,6 +752,960 @@
   }
 }
 
-/* rebuild com o plugin no ar */
+/* The group flow replaces the rail, leaving the conversation in place. */
+.ci *,
+.ci *::before,
+.ci *::after {
+  box-sizing: border-box;
+}
+.ci-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+.ci-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.125rem 1rem 0.75rem 1.5rem;
+}
+.ci-rail-head h1 {
+  margin: 0;
+  font-size: 1.375rem;
+  letter-spacing: -0.04em;
+  font-weight: 650;
+}
+.ci-icon-button {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ci-icon-button:hover {
+  background: var(--paper);
+}
+.ci-icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ci-search .ci-search-field {
+  padding-left: 0.25rem;
+  background: transparent;
+  color: var(--ink);
+}
+.ci-filters {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 1rem 0.875rem;
+}
+.ci-filter {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 2rem;
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.ci-filter:hover {
+  background: var(--paper);
+}
+.ci-filter.is-active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--brand) 16%, var(--bar));
+  color: var(--accent);
+}
+.ci-section-label {
+  margin: 0;
+  padding: 1rem 1.5rem 0.75rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.ci-group-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.ci-group-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 1rem;
+  min-height: 6.75rem;
+  padding: 1.25rem 1rem;
+  background: var(--paper);
+}
+.ci-group-head h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.ci-group-head p {
+  margin: 0.25rem 0 0;
+  color: var(--faint);
+  font-size: 0.75rem;
+}
+.ci-group-panel > .ci-search {
+  flex: none;
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
+.ci-selected {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-height: 9rem;
+  padding: 1rem 1rem 0;
+  overflow-y: auto;
+}
+.ci-selected-person {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  padding: 0 0.5rem 0 0;
+  border: 0;
+  border-radius: 2rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.ci-selected-person .ci-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.625rem;
+}
+.ci-selected-person > span:not(.ci-avatar) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ci-selected-person .ci-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--faint);
+}
+.ci-member.is-picked {
+  background: color-mix(in srgb, var(--brand) 6%, var(--bar));
+}
+.ci-checkbox {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1.5px solid var(--faint);
+  border-radius: 0.25rem;
+  color: white;
+}
+.ci-checkbox .ci-icon {
+  width: 1rem;
+  height: 1rem;
+}
+.ci-member.is-picked .ci-checkbox {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ci-group-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.ci-group-footer > span {
+  color: var(--faint);
+  font-size: 0.8125rem;
+}
+.ci-group-next {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--ink) 15%, transparent);
+  cursor: pointer;
+}
+.ci-group-next:disabled {
+  opacity: 0.35;
+  box-shadow: none;
+  cursor: default;
+}
+.ci-group-next .ci-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.ci-group-details {
+  flex: 1;
+  min-height: 0;
+  padding: 2rem 1.5rem;
+  overflow-y: auto;
+}
+.ci-group-avatar {
+  display: grid;
+  place-items: center;
+  width: 8rem;
+  height: 8rem;
+  margin: 0 auto 2rem;
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--faint);
+}
+.ci-group-avatar .ci-icon {
+  width: 3rem;
+  height: 3rem;
+}
+.ci-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--accent);
+  font-size: 0.8125rem;
+}
+.ci-name-field {
+  width: 100%;
+  border-radius: 0;
+  border-bottom: 2px solid var(--accent);
+  background: transparent;
+  padding: 0.625rem 0;
+}
+.ci-group-hint {
+  margin: 0.75rem 0;
+  color: var(--faint);
+  font-size: 0.75rem;
+  line-height: 1.7;
+}
+.ci-group-details .ci-section-label {
+  padding: 1.5rem 0 0;
+}
+.ci-member-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.ci-member-preview > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 4rem;
+}
+.ci-member-preview > div > span:last-child {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 0.6875rem;
+  color: var(--faint);
+}
+.ci-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid #ffffff60;
+  border-top-color: white;
+  border-radius: 50%;
+  animation: ci-spin 0.8s linear infinite;
+}
+@keyframes ci-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ci-mobile-back {
+  display: none;
+}
+@media (max-width: 48rem) {
+  .ci-mobile-back {
+    display: grid;
+  }
+  .ci.is-creating-group .ci-rail {
+    display: flex;
+  }
+  .ci.is-creating-group .ci-thread {
+    display: none;
+  }
+}
 
-.ci-marca-de-rebuild { color: inherit; }
+/* Conversation details occupy a third column on wide screens. */
+.ci {
+  position: relative;
+}
+.ci-toolbar,
+.ci-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.ci-conversation-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.ci-conversation-title:hover {
+  background: var(--paper);
+}
+.ci-who-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ci-details-panel {
+  display: flex;
+  flex: 0 0 clamp(19rem, 30%, 25rem);
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--canvas);
+}
+.ci-panel-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 1rem;
+  min-height: 4.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--bar);
+  border-bottom: 1px solid var(--line);
+}
+.ci-panel-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+}
+.ci-details-panel > .ci-search,
+.ci-group-panel > .ci-search {
+  margin-top: 1rem;
+}
+.ci-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ci-info-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1.25rem 1.5rem;
+  background: var(--bar);
+}
+.ci-info-hero > .ci-avatar {
+  width: 9rem;
+  height: 9rem;
+  font-size: 2.25rem;
+  margin-bottom: 1.5rem;
+}
+.ci-info-hero h3 {
+  max-width: 100%;
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 500;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.ci-info-hero p {
+  margin: 0.5rem 0 0;
+  color: var(--faint);
+  font-size: 0.8125rem;
+}
+.ci-info-hero .ci-info-date {
+  font-size: 0.6875rem;
+}
+.ci-edit-name {
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+.ci-info-section {
+  margin-top: 0.625rem;
+  padding: 0.5rem 0;
+  background: var(--bar);
+}
+.ci-info-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 1rem 1.5rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.ci-info-link:hover {
+  background: var(--paper);
+}
+.ci-info-link .ci-icon {
+  color: var(--faint);
+}
+.ci-action-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.625rem;
+  height: 2.625rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+}
+.ci-panel-action {
+  color: var(--accent);
+}
+.ci-participant {
+  display: flex;
+  align-items: center;
+  padding-right: 0.75rem;
+}
+.ci-participant > .ci-entry {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+}
+.ci-entry:disabled {
+  cursor: default;
+}
+.ci-creator-badge {
+  flex: none;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--brand) 12%, var(--bar));
+  color: var(--accent);
+  font-size: 0.625rem;
+}
+.ci-remove-member {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--faint);
+}
+.ci-remove-member .ci-icon {
+  width: 1rem;
+  height: 1rem;
+}
+.ci-confirm {
+  margin: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--paper);
+}
+.ci-confirm p {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+}
+.ci-danger {
+  background: #b93838;
+}
+.ci-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+.ci-rename .ci-actions {
+  justify-content: flex-end;
+}
+.ci-panel-footer {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-top: 1px solid var(--line);
+  background: var(--bar);
+}
+.ci-history-back {
+  flex: none;
+  justify-content: flex-start;
+  color: var(--accent);
+  background: var(--bar);
+}
+.ci-details-panel > .ci-filters {
+  flex: none;
+  padding-top: 1rem;
+  gap: 0.375rem;
+}
+.ci-details-panel .ci-filter {
+  padding-inline: 0.625rem;
+}
+.ci-history-results {
+  padding: 0.75rem;
+}
+.ci-history-item {
+  margin: 0 0 0.75rem;
+  padding: 0.875rem;
+  border-radius: 0.625rem;
+  background: var(--bar);
+}
+.ci-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem;
+  margin: 0 0 0.75rem;
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+.ci-search-result {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.ci-shared-link {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--accent);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.ci-load-more {
+  display: block;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--bar);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.ci-bubble.is-found {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.ci-conversation-title:focus-visible,
+.ci-info-link:focus-visible,
+.ci-search-result:focus-visible,
+.ci-load-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (min-width: 48.001rem) and (max-width: 75rem) {
+  .ci.has-panel > .ci-rail {
+    display: none;
+  }
+  .ci-details-panel {
+    flex-basis: 22rem;
+    max-width: 45%;
+  }
+}
+@media (max-width: 48rem) {
+  .ci.has-panel > .ci-rail,
+  .ci.has-panel > .ci-thread {
+    display: none;
+  }
+  .ci-details-panel {
+    flex: 1;
+    width: 100%;
+    border: 0;
+  }
+}
+
+/* Context actions stay reachable by keyboard and touch, including without hover. */
+.ci-bubble:has(.ci-message-menu) {
+  padding-right: 2.25rem;
+}
+.ci-message-menu {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.375rem;
+  z-index: 2;
+}
+.ci-message-menu[open] {
+  z-index: 4;
+}
+.ci-message-menu summary,
+.ci-person-menu summary {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  color: var(--faint);
+  cursor: pointer;
+  list-style: none;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.ci-message-menu summary::-webkit-details-marker,
+.ci-person-menu summary::-webkit-details-marker {
+  display: none;
+}
+.ci-message-menu summary:hover,
+.ci-person-menu summary:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.ci-message-menu > button,
+.ci-person-menu > div {
+  position: absolute;
+  right: 0;
+  top: 2rem;
+  min-width: 11rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--bar);
+  color: var(--ink);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--ink) 18%, transparent);
+  font: inherit;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ci-person-menu {
+  position: relative;
+  flex: none;
+  z-index: 1;
+}
+.ci-person-menu[open] {
+  z-index: 4;
+}
+.ci-person-menu > div {
+  padding: 0.375rem;
+}
+.ci-person-menu button {
+  display: block;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.ci-person-menu button:hover:not(:disabled) {
+  background: var(--paper);
+}
+.ci-person-menu button:disabled {
+  color: var(--faint);
+  opacity: 0.5;
+  cursor: default;
+}
+.ci-deleted-message {
+  color: var(--faint);
+  font-style: italic;
+  font-size: 0.875rem;
+}
+.ci-delete-dialog {
+  width: min(28rem, calc(100% - 2rem));
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  background: var(--bar);
+  color: var(--ink);
+  box-shadow: 0 12px 60px #0004;
+  font: inherit;
+}
+.ci-delete-dialog::backdrop {
+  background: #0007;
+}
+.ci-delete-dialog h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+.ci-delete-dialog p {
+  margin: 1rem 0 1.5rem;
+  color: var(--faint);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.ci-delete-dialog .ci-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.ci-message-menu summary:focus-visible,
+.ci-person-menu summary:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.ci-who-meta.is-typing {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.ci-danger-text {
+  color: #c34949;
+}
+
+.ci-conversation-row {
+  position: relative;
+}
+.ci-conversation-row > .ci-entry {
+  padding-right: 3.25rem;
+}
+.ci-row-menu {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2rem;
+  color: var(--faint);
+}
+.ci-bubble:has(.ci-message-actions) {
+  padding-right: 2.5rem;
+}
+.ci-message-actions {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.25rem;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.ci-message-actions:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.ci-context-menu {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 14rem;
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
+  overflow-y: auto;
+  padding: 0.375rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--bar);
+  color: var(--ink);
+  box-shadow: 0 6px 28px color-mix(in srgb, var(--ink) 20%, transparent);
+}
+.ci-context-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 0.875rem;
+  border: 0;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+.ci-context-menu > button:hover,
+.ci-context-menu > button:focus-visible {
+  outline: none;
+  background: var(--paper);
+}
+.ci-context-menu > button.is-danger {
+  color: #c34949;
+}
+.ci-context-menu > button.is-danger:first-of-type {
+  border-top: 1px solid var(--line);
+}
+.ci-info-dialog dl {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.ci-info-dialog dt {
+  color: var(--faint);
+  font-size: 0.75rem;
+}
+.ci-info-dialog dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+.ci-message-actions:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.ci-receipt {
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  margin-left: 0.25rem;
+  color: var(--faint);
+}
+.ci-receipt svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+.ci-receipt.is-read {
+  color: #34a9dc;
+}
+.ci-entry-last .ci-receipt {
+  margin: 0 0.25rem 0 0;
+}
+
+.ci-text-count {
+  margin: 0;
+  padding: 0 1rem 0.5rem;
+  text-align: right;
+  color: var(--faint);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The plugin's JSX contribution to the shell navigation. */
+.ci-navigation {
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 0.75rem;
+  color: var(--color-text, #20232b);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+.ci-navigation:hover {
+  background: color-mix(in srgb, currentcolor 5%, transparent);
+}
+.ci-navigation-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  color: color-mix(in srgb, var(--color-text, #20232b) 65%, var(--color-panel, #fff));
+}
+.ci-navigation-icon svg {
+  display: block;
+}
+.ci-navigation.is-active .ci-navigation-icon {
+  background: color-mix(in srgb, var(--color-text, #20232b) 5%, var(--color-panel, #fff));
+  color: var(--color-accent, #008a6c);
+  box-shadow: 0 1px 2px #0001;
+}
+.ci-navigation-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ci-navigation:focus-visible {
+  outline: 2px solid var(--color-accent, #008a6c);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ci-navigation {
+    transition: none;
+  }
+}
+
+.ci-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  margin: 0.125rem 0 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  border-left: 3px solid var(--accent);
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.ci-quote strong,
+.ci-reply-preview strong {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.ci-quote > span,
+.ci-reply-preview > div > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--faint);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ci-quote:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.ci-quote:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ci-reply-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 1rem 0;
+  padding: 0.625rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0.375rem;
+  background: var(--paper);
+}
+.ci-reply-preview > .ci-icon {
+  color: var(--accent);
+}
+.ci-reply-preview > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}

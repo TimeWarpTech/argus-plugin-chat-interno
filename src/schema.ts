@@ -33,6 +33,9 @@ export const participants = sqliteTable(
     userId: text("user_id").notNull(),
     /** How far this person has read. Never moves backwards. */
     readThrough: integer("read_through").notNull().default(0),
+    isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
+    clearedThrough: integer("cleared_through").notNull().default(0),
+    hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.conversationId, table.userId] }),
@@ -52,6 +55,9 @@ export const messages = sqliteTable(
     authorId: text("author_id").notNull(),
     text: text("text").notNull(),
     at: text("at").notNull(),
+    deletedAt: text("deleted_at"),
+    deletedBy: text("deleted_by"),
+    replyToId: text("reply_to_id"),
   },
   (table) => [
     unique("messages_id").on(table.id),
@@ -76,6 +82,21 @@ export const attachments = sqliteTable(
     index("attachments_by_message").on(table.messageId),
     index("attachments_pending").on(table.messageId, table.createdAt),
   ],
+);
+
+export const messageReceipts = sqliteTable(
+  "message_receipts",
+  {
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    delivered: integer("delivered", { mode: "boolean" }).notNull().default(false),
+    read: integer("read", { mode: "boolean" }).notNull().default(false),
+    deliveredAt: text("delivered_at"),
+    readAt: text("read_at"),
+  },
+  (table) => [primaryKey({ columns: [table.messageId, table.userId] }), index("receipts_by_user").on(table.userId)],
 );
 
 export const attachmentChunks = sqliteTable(

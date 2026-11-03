@@ -9,7 +9,7 @@ file, asks the kernel for one thing only — the staff directory — and announc
 
 ## Files
 
-Text, images, audio, video and any other file, up to 10 MB each.
+Text, images, audio, video and any other file, up to 50 MB each.
 
 There is **no upload endpoint and no public URL**. The bytes travel in 48 KiB pieces over the same
 authenticated contract call the screen already uses — the shape
@@ -18,7 +18,7 @@ encoded, is 64 KB, which fits inside the 100 KB a plugin call accepts: that numb
 size is what it is, and it is why this works without a single change to the kernel.
 
 A file lives in two states. **Pending** — uploaded, owned by nobody, swept after a day, and capped at
-50 MB per company so an abandoned tab cannot fill a disk. **Bound** — claimed by a message, readable
+200 MB per company so an abandoned tab cannot fill a disk. **Bound** — claimed by a message, readable
 by whoever may read that message, and deleted with the conversation. Nothing is readable while
 pending, so a half-uploaded file is never shown.
 
@@ -192,3 +192,12 @@ the screen's pure functions.
 The suite includes `runPluginConformance`, which is the gate: idempotence, degradation, undeclared
 events, company isolation, export and deletion. A plugin that fails it is not finished, however green
 its own tests are.
+
+## In-app notifications
+
+The plugin requests the optional `kernel.notifications:write` scope. Existing installations must
+approve that permission in the Plugins screen before notifications can be published. The updated
+kernel provides a persisted per-user inbox and realtime bell; clicking a notification opens the
+conversation. The sender does not receive their own notification. Pending publications are stored
+in the company's plugin storage and retried with the same deduplication key every ten seconds.
+The bundled SDK build in `vendor/` includes the new API until it is released on npm.

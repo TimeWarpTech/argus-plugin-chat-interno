@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  groupByDay,
-  hueOf,
-  initialsOf,
-  type Message,
-  otherSideOf,
-  previewOf,
-  refusalIn,
-} from "../../ui/src/model";
+import { groupByDay, hueOf, initialsOf, type Message, otherSideOf, previewOf, refusalIn } from "../../ui/src/model";
 import { wordsFor } from "../../ui/src/words";
 
 const words = wordsFor("pt-BR");
