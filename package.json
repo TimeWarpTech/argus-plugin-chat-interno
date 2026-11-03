@@ -19,7 +19,7 @@
   "dependencies": {
     "@creativepetabyte/argus-automation-nodes": "0.1.0",
     "@creativepetabyte/argus-chat-media": "github:TimeWarpTech/argus-chat-media",
-    "@creativepetabyte/argus-sdk": "0.3.1",
+    "@creativepetabyte/argus-sdk": "file:vendor/creativepetabyte-argus-sdk-0.4.0.tgz",
     "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {

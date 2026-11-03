@@ -192,3 +192,12 @@ the screen's pure functions.
 The suite includes `runPluginConformance`, which is the gate: idempotence, degradation, undeclared
 events, company isolation, export and deletion. A plugin that fails it is not finished, however green
 its own tests are.
+
+## In-app notifications
+
+The plugin requests the optional `kernel.notifications:write` scope. Existing installations must
+approve that permission in the Plugins screen before notifications can be published. The updated
+kernel provides a persisted per-user inbox and realtime bell; clicking a notification opens the
+conversation. The sender does not receive their own notification. Pending publications are stored
+in the company's plugin storage and retried with the same deduplication key every ten seconds.
+The bundled SDK build in `vendor/` includes the new API until it is released on npm.

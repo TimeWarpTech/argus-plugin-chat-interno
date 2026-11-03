@@ -20,6 +20,7 @@ import {
   readMembers,
   type ServedCall,
   screens,
+  sendNotifications,
   shellNavigation,
 } from "@creativepetabyte/argus-sdk";
 import { CHAT_PAGE_PATH } from "../shared/navigation.js";
@@ -40,6 +41,7 @@ import {
   PLUGIN_ID,
   TYPING_CHANGED,
 } from "./events.js";
+import { createNotificationOutbox } from "./notifications.js";
 import { type Message, openStore, type Store, SYSTEM_AUTHOR } from "./store.js";
 import { TypingRegistry } from "./typing.js";
 
@@ -130,6 +132,7 @@ const plugin = definePlugin({
       CONVERSATION_READ,
     ],
     requestedScopes: [
+      sendNotifications("Notify members about new internal chat messages"),
       emitOwnEvents(PLUGIN_ID, "Avisar as telas abertas de cada mensagem nova"),
       readMembers("Ver quem trabalha nesta empresa, para você escolher com quem falar"),
     ],
@@ -152,6 +155,7 @@ const plugin = definePlugin({
      * scope keyed by company is the leak this project lints for — and the one the previous system
      * shipped.
      */
+    const notifications = createNotificationOutbox(ctx);
     let store: Store | undefined;
     const typing = new TypingRegistry();
 
@@ -205,6 +209,19 @@ const plugin = definePlugin({
         // resends on its own, and the screen reloads on its next call.
         ctx.log(`could not announce ${MESSAGE_SENT}: ${reasonOf(error)}`);
       }
+      const recipients = [...new Set(participants)].filter((id) => id !== message.authorId && id !== SYSTEM_AUTHOR);
+      const jobs = [];
+      for (let offset = 0; offset < recipients.length; offset += 100) {
+        jobs.push({
+          key: `message:${message.id}:${offset}`,
+          recipients: recipients.slice(offset, offset + 100),
+          title: { "pt-BR": "Nova mensagem no chat interno", en: "New internal chat message" },
+          body: message.text.slice(0, 1000),
+          page: SCREEN_PATH,
+          query: { conversation: message.conversationId },
+        });
+      }
+      if (jobs.length) await notifications.enqueue(jobs);
     };
 
     /**
@@ -691,6 +708,7 @@ const plugin = definePlugin({
       exportData: () => storage().exportAll(),
       deleteData: () => storage().deleteAll(),
       onShutdown: () => {
+        notifications.stop();
         store?.close();
         store = undefined;
       },

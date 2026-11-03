@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ContractMethods, contextFor, type Host, runPluginConformance } from "@creativepetabyte/argus-sdk";
 import { createFakeHost, type FakeHost } from "@creativepetabyte/argus-sdk/testing";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GROUP_ADMINS_CHANGED, GROUP_UPDATED, TYPING_CHANGED } from "../src/events.js";
 import plugin, { CHAT, MESSAGE_SENT } from "../src/plugin.js";
 
@@ -404,4 +404,23 @@ describe("the conformance suite", () => {
 
     expect(failures.map((failure) => `${failure.scenario.name}: ${failure.got}`)).toEqual([]);
   });
+});
+
+it("notifies the other participant through the SDK with a link to the saved conversation", async () => {
+  const host = withColleagues();
+  const publish = vi.fn(async () => ({ created: 1, ids: [] }));
+  host.publishNotification = publish;
+  const { methods } = company(host);
+  const opened = (await methods.OpenDirect?.({ withUserId: "bruno" }, { caller: ANA })) as {
+    conversation: { id: string };
+  };
+  await methods.Send?.({ conversationId: opened.conversation.id, text: "Hello" }, { caller: ANA });
+  expect(publish).toHaveBeenCalledWith(
+    expect.objectContaining({
+      recipients: ["bruno"],
+      body: "Hello",
+      page: "chat-interno",
+      query: { conversation: opened.conversation.id },
+    }),
+  );
 });

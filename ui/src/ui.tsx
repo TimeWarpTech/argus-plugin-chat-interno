@@ -42,11 +42,24 @@ export function ChatInternoPage({
   me,
   locale = "pt-BR",
   renderSlot,
+  search = "",
   // The second parameter says what a slot renders to. The host draws React here, so saying so is
   // what lets a contribution be placed in this tree instead of being cast on every use.
 }: PluginHostProps<DomNode, ReactNode>) {
   const words = useMemo(() => wordsFor(locale), [locale]);
   const chat = useChat({ call, stream, words });
+  const linkedConversation = new URLSearchParams(search).get("conversation");
+  const consumedLink = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linkedConversation) {
+      consumedLink.current = null;
+      return;
+    }
+    if (consumedLink.current === linkedConversation) return;
+    if (!chat.conversations.some((one) => one.id === linkedConversation)) return;
+    consumedLink.current = linkedConversation;
+    chat.openConversation(linkedConversation);
+  }, [linkedConversation, chat.conversations, chat.openConversation]);
   const [conversationMenu, setConversationMenu] = useState<{ conversation: Conversation; position: MenuPosition }>();
   const [conversationAction, setConversationAction] = useState<{
     conversation: Conversation;
